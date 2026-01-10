@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BackDatUp is a PostgreSQL database backup automation tool that creates parallel database dumps, persists them to RAID storage, restores from backups with error tolerance, and manages backup lifecycle with intelligent cleanup.
+BackDatUp is a backup automation tool for PostgreSQL databases and MinIO object storage. It creates parallel database dumps, backs up MinIO buckets, persists them to RAID storage, restores from backups with error tolerance, and manages backup lifecycle with intelligent cleanup.
 
 ## Commands
 
 ```bash
-make backup       # Create PostgreSQL dump (prevention/psql-backup.sh)
-make restore      # Restore database from RAID (recovery/restore-psql.sh)
-make persist      # Copy local dumps to RAID (storage/persist-dumps.sh)
-make cleanup      # Remove old backups from RAID (storage/cleanup.sh)
+make backup       # Create PostgreSQL dump + MinIO bucket backups
+make restore      # Restore PostgreSQL + MinIO from RAID
+make persist      # Copy local dumps to RAID (with type-aware stats)
+make cleanup      # Remove old backups from RAID (PostgreSQL + MinIO)
 make e2e-run      # Full workflow: backup -> persist -> restore -> cleanup
 ```
 
@@ -20,9 +20,13 @@ make e2e-run      # Full workflow: backup -> persist -> restore -> cleanup
 
 The codebase is organized by backup workflow stages:
 
-- **prevention/** - Backup creation using `pg_dump` with directory format and parallel jobs
-- **recovery/** - Database restoration using `pg_restore` with error tolerance for version compatibility
-- **storage/** - RAID persistence with file-level deduplication and retention-based cleanup
+- **prevention/** - Backup creation
+  - `psql-backup.sh` - PostgreSQL using `pg_dump` with directory format and parallel jobs
+  - `minio-backup.sh` - MinIO buckets using `mc` client, creates `.tar.gz` archives per bucket
+- **recovery/** - Restoration
+  - `restore-psql.sh` - PostgreSQL using `pg_restore` with error tolerance for version compatibility
+  - `restore-minio.sh` - MinIO buckets using `mc` client, extracts and uploads from archives
+- **storage/** - RAID persistence with file-level deduplication and retention-based cleanup (supports both PostgreSQL and MinIO)
 
 ### Key Design Decisions
 
@@ -36,11 +40,14 @@ The codebase is organized by backup workflow stages:
 
 Scripts require a `.env` file with:
 - `RAID_PATH` - RAID mount point
-- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`
+- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB` - PostgreSQL connection
+- `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` - MinIO connection
 
 See `.env.example` for template.
 
 ## Local Directories
 
-- `dumps/psql/` - Local backup staging (created by backup, cleaned after RAID persist)
-- `{RAID_PATH}/backthatup/` - Long-term RAID storage location
+- `dumps/psql/` - Local PostgreSQL backup staging
+- `dumps/minio/` - Local MinIO backup staging (`.tar.gz` archives)
+- `{RAID_PATH}/backthatup/psql/` - Long-term PostgreSQL RAID storage
+- `{RAID_PATH}/backthatup/minio/` - Long-term MinIO RAID storage

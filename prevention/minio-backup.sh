@@ -66,9 +66,17 @@ trap "rm -rf $TEMP_DIR; mc alias rm $MC_ALIAS > /dev/null 2>&1 || true" EXIT
 
 SUCCESS_COUNT=0
 FAIL_COUNT=0
+SKIPPED_COUNT=0
 
 for BUCKET in $BUCKETS; do
     echo -e "\n${CYAN}${BOLD}Processing bucket:${NC} ${YELLOW}${BUCKET}${NC}"
+
+    OBJECT_COUNT=$(mc ls --recursive "$MC_ALIAS/$BUCKET/" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$OBJECT_COUNT" -eq 0 ]; then
+        echo -e "  ${YELLOW}Skipping empty bucket${NC}"
+        ((SKIPPED_COUNT++))
+        continue
+    fi
 
     BUCKET_TEMP="$TEMP_DIR/$BUCKET"
     mkdir -p "$BUCKET_TEMP"
@@ -88,7 +96,7 @@ for BUCKET in $BUCKETS; do
             ((FAIL_COUNT++))
         fi
     else
-        echo -e "  ${YELLOW}Bucket is empty or download failed${NC}"
+        echo -e "  ${RED}Failed to download bucket contents${NC}"
         ((FAIL_COUNT++))
     fi
 
@@ -99,7 +107,12 @@ echo -e "\n${CYAN}${BOLD}======================================================$
 echo -e "${BOLD}Backup Summary${NC}"
 echo -e "${CYAN}${BOLD}======================================================${NC}"
 echo -e "${GREEN}Successful:${NC} ${SUCCESS_COUNT}"
-echo -e "${RED}Failed:${NC}     ${FAIL_COUNT}"
+if [ "$SKIPPED_COUNT" -gt 0 ]; then
+    echo -e "${YELLOW}Skipped:${NC}    ${SKIPPED_COUNT} (empty buckets)"
+fi
+if [ "$FAIL_COUNT" -gt 0 ]; then
+    echo -e "${RED}Failed:${NC}     ${FAIL_COUNT}"
+fi
 echo -e "${BOLD}Location:${NC}   ${DUMP_DIR}"
 
 if [ "$SUCCESS_COUNT" -gt 0 ]; then
