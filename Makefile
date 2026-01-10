@@ -6,3 +6,12 @@ restore:
 
 persist:
 	bash storage/persist-dumps.sh
+
+cleanup:
+	bash storage/cleanup.sh
+
+e2e-run:
+	make backup
+	make persist
+	make restore
+	make cleanup
