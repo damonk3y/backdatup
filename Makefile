@@ -3,3 +3,6 @@ backup:
 
 restore:
 	bash recovery/restore-psql.sh
+
+persist:
+	bash storage/persist-dumps.sh

@@ -27,7 +27,7 @@ for var in "${required_vars[@]}"; do
     fi
 done
 
-DUMP_DIR="$PROJECT_ROOT/dumps"
+DUMP_DIR="$PROJECT_ROOT/dumps/psql/"
 mkdir -p "$DUMP_DIR"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")

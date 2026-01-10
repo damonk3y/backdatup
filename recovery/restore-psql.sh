@@ -27,7 +27,7 @@ fi
 
 source "$PROJECT_ROOT/.env"
 
-required_vars=("POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_HOST" "POSTGRES_PORT" "POSTGRES_DB")
+required_vars=("POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_HOST" "POSTGRES_PORT" "POSTGRES_DB" "RAID_PATH")
 for var in "${required_vars[@]}"; do
     if [ -z "${!var}" ]; then
         warn "Environment variable ${YELLOW}$var${NC} is not set. Can't continue 🫸⚠️"
@@ -35,7 +35,17 @@ for var in "${required_vars[@]}"; do
     fi
 done
 
-DUMP_DIR="$PROJECT_ROOT/dumps"
+DUMP_DIR="${RAID_PATH}/backthatup/psql/"
+
+if [ ! -d "$RAID_PATH" ]; then
+    error "RAID mount path not found: ${CYAN}$RAID_PATH${NC} 😱"
+    exit 1
+fi
+
+if [ ! -r "$RAID_PATH" ]; then
+    error "RAID mount path is not readable: ${CYAN}$RAID_PATH${NC} 😱"
+    exit 1
+fi
 
 if [ ! -d "$DUMP_DIR" ]; then
     error "Dumps directory not found at ${CYAN}$DUMP_DIR${NC} 😱"
@@ -61,6 +71,7 @@ echo -e "$divider"
 echo -e "🐘🔄 ${BOLD}Starting PostgreSQL Restore Process${NC} 🚀"
 info   "💾 Database : ${YELLOW}${POSTGRES_DB}${NC}"
 info   "🌐 Host     : ${YELLOW}${POSTGRES_HOST}${NC}:${YELLOW}${POSTGRES_PORT}${NC}"
+info   "💿 Source   : ${YELLOW}${RAID_PATH}/backthatup${NC}"
 info   "📄 Backup   : ${YELLOW}$LATEST_BACKUP${NC}"
 
 if [ -d "$LATEST_BACKUP" ]; then
