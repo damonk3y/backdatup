@@ -29,7 +29,9 @@ if [ -z "${POSTGRES_DB}" ]; then
     exit 1
 fi
 
-TARGET_DIR="${RAID_PATH}/backthatup/psql"
+BACKUP_ROOT="${RAID_PATH}/backthatup"
+PSQL_TARGET_DIR="${BACKUP_ROOT}/psql"
+MINIO_TARGET_DIR="${BACKUP_ROOT}/minio"
 
 if [ ! -d "$RAID_PATH" ]; then
     echo -e "${RED}${BOLD}❌✗ Error:${NC} RAID mount path not found: ${CYAN}$RAID_PATH${NC} 😱"
@@ -41,88 +43,130 @@ if [ ! -w "$RAID_PATH" ]; then
     exit 1
 fi
 
-if [ ! -d "$TARGET_DIR" ]; then
-    echo -e "${YELLOW}${BOLD}⚠️  Warning:${NC} Target directory not found: ${CYAN}$TARGET_DIR${NC} 📭"
+HAS_PSQL=false
+HAS_MINIO=false
+
+if [ -d "$PSQL_TARGET_DIR" ]; then
+    HAS_PSQL=true
+fi
+
+if [ -d "$MINIO_TARGET_DIR" ]; then
+    HAS_MINIO=true
+fi
+
+if [ "$HAS_PSQL" = false ] && [ "$HAS_MINIO" = false ]; then
+    echo -e "${YELLOW}${BOLD}⚠️  Warning:${NC} No backup directories found in ${CYAN}$BACKUP_ROOT${NC} 📭"
     exit 0
 fi
 
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
 echo -e "🧹 ${BOLD}Starting RAID Cleanup Process${NC} 🗑️\n"
 echo -e "💿 ${BOLD}RAID Path  :${NC} ${YELLOW}${RAID_PATH}${NC}"
-echo -e "📂 ${BOLD}Target Dir :${NC} ${YELLOW}${TARGET_DIR}${NC}"
+if [ "$HAS_PSQL" = true ]; then
+    echo -e "🐘 ${BOLD}PostgreSQL :${NC} ${YELLOW}${PSQL_TARGET_DIR}${NC}"
+fi
+if [ "$HAS_MINIO" = true ]; then
+    echo -e "📦 ${BOLD}MinIO      :${NC} ${YELLOW}${MINIO_TARGET_DIR}${NC}"
+fi
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
 
-BACKUP_DIRS=()
-while IFS= read -r -d '' backup; do
-    BACKUP_DIRS+=("$backup")
-done < <(find "$TARGET_DIR" -maxdepth 1 -type d -name "${POSTGRES_DB}_*" -print0 2>/dev/null | sort -rz)
-
-while IFS= read -r -d '' backup; do
-    BACKUP_DIRS+=("$backup")
-done < <(find "$TARGET_DIR" -maxdepth 1 -type f \( -name "${POSTGRES_DB}_*.dump" -o -name "${POSTGRES_DB}.dump" \) -print0 2>/dev/null | sort -rz)
-
-BACKUP_COUNT=${#BACKUP_DIRS[@]}
-
-if [ "$BACKUP_COUNT" -eq 0 ]; then
-    echo -e "\n${YELLOW}${BOLD}⚠️  Warning:${NC} No backups found in ${CYAN}$TARGET_DIR${NC} 📭"
-    exit 0
-fi
-
-echo -e "\n📊 ${BOLD}Found ${YELLOW}${BACKUP_COUNT}${NC} ${BOLD}backup(s)${NC}\n"
-
-if [ "$BACKUP_COUNT" -lt 3 ]; then
-    echo -e "${YELLOW}${BOLD}⚠️  Skipping cleanup:${NC} Only ${YELLOW}${BACKUP_COUNT}${NC} backup(s) found. Need at least 3 to proceed. 🛡️"
-    exit 0
-fi
-
 CUTOFF_TIME=$(date -v-2d +%s 2>/dev/null || date -d "2 days ago" +%s)
-KEPT=0
-DELETED=0
+
+PSQL_KEPT=0
+PSQL_DELETED=0
+MINIO_KEPT=0
+MINIO_DELETED=0
 TOTAL_SIZE_FREED=0
 
-echo -e "🔍 ${BOLD}Analyzing backups...${NC}\n"
+cleanup_backups() {
+    local target_dir="$1"
+    local pattern="$2"
+    local backup_type="$3"
+    local icon="$4"
+    local kept_var="$5"
+    local deleted_var="$6"
 
-for i in "${!BACKUP_DIRS[@]}"; do
-    backup="${BACKUP_DIRS[$i]}"
-    backup_name=$(basename "$backup")
+    local backups=()
 
-    if [ -d "$backup" ]; then
-        backup_mtime=$(stat -f%m "$backup" 2>/dev/null || stat -c%Y "$backup" 2>/dev/null || echo 0)
-    else
-        backup_mtime=$(stat -f%m "$backup" 2>/dev/null || stat -c%Y "$backup" 2>/dev/null || echo 0)
+    while IFS= read -r -d '' backup; do
+        backups+=("$backup")
+    done < <(find "$target_dir" -maxdepth 1 -type d -name "${pattern}_*" -print0 2>/dev/null | sort -rz)
+
+    while IFS= read -r -d '' backup; do
+        backups+=("$backup")
+    done < <(find "$target_dir" -maxdepth 1 -type f \( -name "${pattern}_*.dump" -o -name "${pattern}.dump" -o -name "${pattern}_*.tar.gz" -o -name "*_*.tar.gz" \) -print0 2>/dev/null | sort -rz)
+
+    local backup_count=${#backups[@]}
+
+    if [ "$backup_count" -eq 0 ]; then
+        echo -e "\n${YELLOW}${BOLD}⚠️  Warning:${NC} No ${backup_type} backups found 📭"
+        return
     fi
 
-    if [ "$i" -lt 3 ]; then
-        KEPT=$((KEPT + 1))
-        backup_date=$(date -r "$backup_mtime" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "@$backup_mtime" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown")
-        echo -e "🛡️  ${GREEN}Keeping${NC} ${CYAN}${backup_name}${NC} (latest ${KEPT}/3, modified: ${YELLOW}${backup_date}${NC})"
-        continue
+    echo -e "\n${icon} ${BOLD}${backup_type} Backups:${NC} Found ${YELLOW}${backup_count}${NC} backup(s)"
+
+    if [ "$backup_count" -lt 3 ]; then
+        echo -e "   ${YELLOW}⚠️  Skipping:${NC} Only ${backup_count} backup(s). Need at least 3 to cleanup. 🛡️"
+        eval "$kept_var=\$backup_count"
+        return
     fi
 
-    if [ "$backup_mtime" -lt "$CUTOFF_TIME" ]; then
-        if [ -d "$backup" ]; then
-            backup_size=$(du -sk "$backup" 2>/dev/null | cut -f1 || echo 0)
-        else
-            backup_size=$(stat -f%z "$backup" 2>/dev/null || stat -c%s "$backup" 2>/dev/null || echo 0)
-            backup_size=$((backup_size / 1024))
+    echo ""
+
+    local local_kept=0
+    local local_deleted=0
+
+    for i in "${!backups[@]}"; do
+        local backup="${backups[$i]}"
+        local backup_name=$(basename "$backup")
+        local backup_mtime=$(stat -f%m "$backup" 2>/dev/null || stat -c%Y "$backup" 2>/dev/null || echo 0)
+
+        if [ "$i" -lt 3 ]; then
+            local_kept=$((local_kept + 1))
+            local backup_date=$(date -r "$backup_mtime" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "@$backup_mtime" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown")
+            echo -e "   🛡️  ${GREEN}Keeping${NC} ${CYAN}${backup_name}${NC} (latest ${local_kept}/3)"
+            continue
         fi
 
-        backup_date=$(date -r "$backup_mtime" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "@$backup_mtime" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown")
+        if [ "$backup_mtime" -lt "$CUTOFF_TIME" ]; then
+            local backup_size
+            if [ -d "$backup" ]; then
+                backup_size=$(du -sk "$backup" 2>/dev/null | cut -f1 || echo 0)
+            else
+                backup_size=$(stat -f%z "$backup" 2>/dev/null || stat -c%s "$backup" 2>/dev/null || echo 0)
+                backup_size=$((backup_size / 1024))
+            fi
 
-        echo -e "🗑️  ${YELLOW}Deleting${NC} ${CYAN}${backup_name}${NC} (older than 2 days, modified: ${YELLOW}${backup_date}${NC})"
+            echo -e "   🗑️  ${YELLOW}Deleting${NC} ${CYAN}${backup_name}${NC} (older than 2 days)"
 
-        if rm -rf "$backup" 2>/dev/null; then
-            DELETED=$((DELETED + 1))
-            TOTAL_SIZE_FREED=$((TOTAL_SIZE_FREED + backup_size))
+            if rm -rf "$backup" 2>/dev/null; then
+                local_deleted=$((local_deleted + 1))
+                TOTAL_SIZE_FREED=$((TOTAL_SIZE_FREED + backup_size))
+            else
+                echo -e "      ${RED}✗${NC} Failed to delete"
+            fi
         else
-            echo -e "   ${RED}✗${NC} Failed to delete"
+            local_kept=$((local_kept + 1))
+            echo -e "   🛡️  ${GREEN}Keeping${NC} ${CYAN}${backup_name}${NC} (less than 2 days old)"
         fi
-    else
-        KEPT=$((KEPT + 1))
-        backup_date=$(date -r "$backup_mtime" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "@$backup_mtime" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown")
-        echo -e "🛡️  ${GREEN}Keeping${NC} ${CYAN}${backup_name}${NC} (less than 2 days old, modified: ${YELLOW}${backup_date}${NC})"
-    fi
-done
+    done
+
+    eval "$kept_var=$local_kept"
+    eval "$deleted_var=$local_deleted"
+}
+
+echo -e "\n🔍 ${BOLD}Analyzing backups...${NC}"
+
+if [ "$HAS_PSQL" = true ]; then
+    cleanup_backups "$PSQL_TARGET_DIR" "$POSTGRES_DB" "PostgreSQL" "🐘" "PSQL_KEPT" "PSQL_DELETED"
+fi
+
+if [ "$HAS_MINIO" = true ]; then
+    cleanup_backups "$MINIO_TARGET_DIR" "*" "MinIO" "📦" "MINIO_KEPT" "MINIO_DELETED"
+fi
+
+KEPT=$((PSQL_KEPT + MINIO_KEPT))
+DELETED=$((PSQL_DELETED + MINIO_DELETED))
 
 if [ "$TOTAL_SIZE_FREED" -gt 1048576 ]; then
     GB_SIZE=$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE_FREED / 1048576}")
@@ -137,12 +181,30 @@ fi
 echo -e "\n${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
 if [ "$DELETED" -gt 0 ]; then
     echo -e "${GREEN}${BOLD}✅✓ Cleanup completed successfully! 🎉${NC}"
-    echo -e "🛡️  ${BOLD}Backups Kept :${NC} ${YELLOW}${KEPT}${NC}"
+    echo -e "🛡️  ${BOLD}Backups Kept   :${NC} ${YELLOW}${KEPT}${NC}"
+    if [ "$PSQL_KEPT" -gt 0 ]; then
+        echo -e "   🐘 ${BOLD}PostgreSQL :${NC} ${YELLOW}${PSQL_KEPT}${NC}"
+    fi
+    if [ "$MINIO_KEPT" -gt 0 ]; then
+        echo -e "   📦 ${BOLD}MinIO      :${NC} ${YELLOW}${MINIO_KEPT}${NC}"
+    fi
     echo -e "🗑️  ${BOLD}Backups Deleted:${NC} ${YELLOW}${DELETED}${NC}"
-    echo -e "💾 ${BOLD}Space Freed  :${NC} ${YELLOW}${SIZE_FORMATTED}${NC}"
+    if [ "$PSQL_DELETED" -gt 0 ]; then
+        echo -e "   🐘 ${BOLD}PostgreSQL :${NC} ${YELLOW}${PSQL_DELETED}${NC}"
+    fi
+    if [ "$MINIO_DELETED" -gt 0 ]; then
+        echo -e "   📦 ${BOLD}MinIO      :${NC} ${YELLOW}${MINIO_DELETED}${NC}"
+    fi
+    echo -e "💾 ${BOLD}Space Freed    :${NC} ${YELLOW}${SIZE_FORMATTED}${NC}"
 else
     echo -e "${GREEN}${BOLD}✅✓ Cleanup completed${NC}"
-    echo -e "🛡️  ${BOLD}Backups Kept :${NC} ${YELLOW}${KEPT}${NC}"
+    echo -e "🛡️  ${BOLD}Backups Kept   :${NC} ${YELLOW}${KEPT}${NC}"
+    if [ "$PSQL_KEPT" -gt 0 ]; then
+        echo -e "   🐘 ${BOLD}PostgreSQL :${NC} ${YELLOW}${PSQL_KEPT}${NC}"
+    fi
+    if [ "$MINIO_KEPT" -gt 0 ]; then
+        echo -e "   📦 ${BOLD}MinIO      :${NC} ${YELLOW}${MINIO_KEPT}${NC}"
+    fi
     echo -e "ℹ️  ${BOLD}No backups deleted (all are recent or protected)${NC}"
 fi
 

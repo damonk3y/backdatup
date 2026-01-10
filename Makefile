@@ -1,4 +1,5 @@
 backup:
+	bash prevention/minio-backup.sh
 	bash prevention/psql-backup.sh
 
 restore:
