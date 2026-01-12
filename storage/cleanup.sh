@@ -29,7 +29,17 @@ if [ -z "${POSTGRES_DB}" ]; then
     exit 1
 fi
 
-BACKUP_ROOT="${RAID_PATH}/backthatup"
+if [ -z "${ENVIRONMENT}" ]; then
+    echo -e "${RED}${BOLD}❌✗ Error:${NC} ENVIRONMENT variable is not set ⚠️"
+    exit 1
+fi
+
+if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "prod" ]]; then
+    echo -e "${RED}${BOLD}❌✗ Error:${NC} ENVIRONMENT must be ${YELLOW}staging${NC} or ${YELLOW}prod${NC} ⚠️"
+    exit 1
+fi
+
+BACKUP_ROOT="${RAID_PATH}/backthatup/$ENVIRONMENT"
 PSQL_TARGET_DIR="${BACKUP_ROOT}/psql"
 MINIO_TARGET_DIR="${BACKUP_ROOT}/minio"
 
@@ -61,6 +71,7 @@ fi
 
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
 echo -e "🧹 ${BOLD}Starting RAID Cleanup Process${NC} 🗑️\n"
+echo -e "🏷️  ${BOLD}Environment:${NC} ${YELLOW}${ENVIRONMENT}${NC}"
 echo -e "💿 ${BOLD}RAID Path  :${NC} ${YELLOW}${RAID_PATH}${NC}"
 if [ "$HAS_PSQL" = true ]; then
     echo -e "🐘 ${BOLD}PostgreSQL :${NC} ${YELLOW}${PSQL_TARGET_DIR}${NC}"
@@ -208,7 +219,7 @@ else
     echo -e "ℹ️  ${BOLD}No backups deleted (all are recent or protected)${NC}"
 fi
 
-LOCAL_DUMPS_DIR="$PROJECT_ROOT/dumps"
+LOCAL_DUMPS_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT"
 if [ -d "$LOCAL_DUMPS_DIR" ]; then
     echo -e "\n🧹 ${BOLD}Cleaning local dumps directory...${NC}"
     if rm -rf "$LOCAL_DUMPS_DIR" 2>/dev/null; then

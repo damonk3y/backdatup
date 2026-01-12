@@ -24,10 +24,20 @@ if [ -z "${RAID_PATH}" ]; then
     exit 1
 fi
 
-DUMP_DIR="$PROJECT_ROOT/dumps"
+if [ -z "${ENVIRONMENT}" ]; then
+    echo -e "${RED}${BOLD}❌✗ Error:${NC} ENVIRONMENT variable is not set ⚠️"
+    exit 1
+fi
+
+if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "prod" ]]; then
+    echo -e "${RED}${BOLD}❌✗ Error:${NC} ENVIRONMENT must be ${YELLOW}staging${NC} or ${YELLOW}prod${NC} ⚠️"
+    exit 1
+fi
+
+DUMP_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT"
 MINIO_DUMP_DIR="$DUMP_DIR/minio"
 PSQL_DUMP_DIR="$DUMP_DIR/psql"
-TARGET_DIR="${RAID_PATH}/backthatup"
+TARGET_DIR="${RAID_PATH}/backthatup/$ENVIRONMENT"
 
 if [ ! -d "$DUMP_DIR" ]; then
     echo -e "${RED}${BOLD}❌✗ Error:${NC} Dumps directory not found: ${CYAN}$DUMP_DIR${NC} 😱"
@@ -48,6 +58,7 @@ mkdir -p "$TARGET_DIR"
 
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
 echo -e "💾 ${BOLD}Starting Dump Persistence to RAID${NC} 🗄️\n"
+echo -e "🏷️  ${BOLD}Environment:${NC} ${YELLOW}$ENVIRONMENT${NC}"
 echo -e "📂 ${BOLD}Source    :${NC} ${YELLOW}$DUMP_DIR${NC}"
 echo -e "🎯 ${BOLD}Target    :${NC} ${YELLOW}$TARGET_DIR${NC}"
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"

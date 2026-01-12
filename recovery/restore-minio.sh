@@ -26,7 +26,7 @@ fi
 
 source "$PROJECT_ROOT/.env"
 
-required_vars=("MINIO_ENDPOINT" "MINIO_ACCESS_KEY" "MINIO_SECRET_KEY" "RAID_PATH")
+required_vars=("MINIO_ENDPOINT" "MINIO_ACCESS_KEY" "MINIO_SECRET_KEY" "RAID_PATH" "ENVIRONMENT")
 for var in "${required_vars[@]}"; do
     if [ -z "${!var}" ]; then
         warn "Environment variable ${YELLOW}$var${NC} is not set. Can't continue 🫸⚠️"
@@ -34,7 +34,12 @@ for var in "${required_vars[@]}"; do
     fi
 done
 
-BACKUP_DIR="${RAID_PATH}/backthatup/minio"
+if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "prod" ]]; then
+    error "ENVIRONMENT must be ${YELLOW}staging${NC} or ${YELLOW}prod${NC}"
+    exit 1
+fi
+
+BACKUP_DIR="${RAID_PATH}/backthatup/$ENVIRONMENT/minio"
 MC_ALIAS="backdatup_minio_restore"
 
 if [ ! -d "$RAID_PATH" ]; then
@@ -80,6 +85,7 @@ BUCKET_COUNT=${#LATEST_BACKUPS[@]}
 
 echo -e "$divider"
 echo -e "📦🔄 ${BOLD}Starting MinIO Restore Process${NC} 🚀"
+info   "🏷️  Environment: ${YELLOW}${ENVIRONMENT}${NC}"
 info   "🌐 Endpoint : ${YELLOW}${MINIO_ENDPOINT}${NC}"
 info   "💿 Source   : ${YELLOW}${BACKUP_DIR}${NC}"
 info   "📊 Buckets  : ${YELLOW}${BUCKET_COUNT}${NC} to restore"

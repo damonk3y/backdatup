@@ -19,7 +19,7 @@ fi
 
 source "$PROJECT_ROOT/.env"
 
-required_vars=("POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_HOST" "POSTGRES_PORT" "POSTGRES_DB")
+required_vars=("POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_HOST" "POSTGRES_PORT" "POSTGRES_DB" "ENVIRONMENT")
 for var in "${required_vars[@]}"; do
     if [ -z "${!var}" ]; then
         echo -e "${RED}${BOLD}❌✗ Error:${NC} Required environment variable ${YELLOW}$var${NC} is not set ⚠️"
@@ -27,7 +27,12 @@ for var in "${required_vars[@]}"; do
     fi
 done
 
-DUMP_DIR="$PROJECT_ROOT/dumps/psql/"
+if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "prod" ]]; then
+    echo -e "${RED}${BOLD}❌✗ Error:${NC} ENVIRONMENT must be ${YELLOW}staging${NC} or ${YELLOW}prod${NC} ⚠️"
+    exit 1
+fi
+
+DUMP_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT/psql/"
 mkdir -p "$DUMP_DIR"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -40,6 +45,7 @@ fi
 
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
 echo -e "🚀 ${BOLD}Starting PostgreSQL Backup${NC} 🐘\n"
+echo -e "🏷️  ${BOLD}Environment:${NC} ${YELLOW}${ENVIRONMENT}${NC}"
 echo -e "💾 ${BOLD}Database  :${NC} ${YELLOW}${POSTGRES_DB}${NC}"
 echo -e "🌐 ${BOLD}Host      :${NC} ${YELLOW}${POSTGRES_HOST}${NC}:${YELLOW}${POSTGRES_PORT}${NC}"
 echo -e "📄 ${BOLD}Dump Dir  :${NC} ${YELLOW}${BACKUP_DIR}${NC}"

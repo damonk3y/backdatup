@@ -19,7 +19,7 @@ fi
 
 source "$PROJECT_ROOT/.env"
 
-required_vars=("MINIO_ENDPOINT" "MINIO_ACCESS_KEY" "MINIO_SECRET_KEY")
+required_vars=("MINIO_ENDPOINT" "MINIO_ACCESS_KEY" "MINIO_SECRET_KEY" "ENVIRONMENT")
 for var in "${required_vars[@]}"; do
     if [ -z "${!var}" ]; then
         echo -e "${RED}${BOLD}Error:${NC} Required environment variable ${YELLOW}$var${NC} is not set"
@@ -27,7 +27,12 @@ for var in "${required_vars[@]}"; do
     fi
 done
 
-DUMP_DIR="$PROJECT_ROOT/dumps/minio"
+if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "prod" ]]; then
+    echo -e "${RED}${BOLD}Error:${NC} ENVIRONMENT must be ${YELLOW}staging${NC} or ${YELLOW}prod${NC}"
+    exit 1
+fi
+
+DUMP_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT/minio"
 TIMESTAMP=$(date +"%Y_%m%d_%H%M%S")
 MC_ALIAS="backdatup_minio"
 
@@ -35,6 +40,7 @@ mkdir -p "$DUMP_DIR"
 
 echo -e "${CYAN}${BOLD}======================================================${NC}"
 echo -e "${BOLD}Starting MinIO Backup${NC}\n"
+echo -e "${BOLD}Environment:${NC} ${YELLOW}${ENVIRONMENT}${NC}"
 echo -e "${BOLD}Endpoint  :${NC} ${YELLOW}${MINIO_ENDPOINT}${NC}"
 echo -e "${BOLD}Output    :${NC} ${YELLOW}${DUMP_DIR}${NC}"
 echo -e "${BOLD}Timestamp :${NC} ${YELLOW}${TIMESTAMP}${NC}"

@@ -53,6 +53,7 @@ The codebase is organized by backup workflow stages:
 
 Scripts require a `.env` file with:
 - `RAID_PATH` - RAID mount point
+- `ENVIRONMENT` - Environment name (`staging` or `prod`) - separates backups by environment
 - `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB` - PostgreSQL connection
 - `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` - MinIO connection
 
@@ -60,7 +61,11 @@ See `.env.example` for template.
 
 ## Local Directories
 
-- `dumps/psql/` - Local PostgreSQL backup staging
-- `dumps/minio/` - Local MinIO backup staging (`.tar.gz` archives)
-- `{RAID_PATH}/backthatup/psql/` - Long-term PostgreSQL RAID storage
-- `{RAID_PATH}/backthatup/minio/` - Long-term MinIO RAID storage
+Backups are organized by environment:
+
+- `dumps/{ENVIRONMENT}/psql/` - Local PostgreSQL backup staging
+- `dumps/{ENVIRONMENT}/minio/` - Local MinIO backup staging (`.tar.gz` archives)
+- `{RAID_PATH}/backthatup/{ENVIRONMENT}/psql/` - Long-term PostgreSQL RAID storage
+- `{RAID_PATH}/backthatup/{ENVIRONMENT}/minio/` - Long-term MinIO RAID storage
+
+Where `{ENVIRONMENT}` is either `staging` or `prod`.

@@ -27,7 +27,7 @@ fi
 
 source "$PROJECT_ROOT/.env"
 
-required_vars=("POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_HOST" "POSTGRES_PORT" "POSTGRES_DB" "RAID_PATH")
+required_vars=("POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_HOST" "POSTGRES_PORT" "POSTGRES_DB" "RAID_PATH" "ENVIRONMENT")
 for var in "${required_vars[@]}"; do
     if [ -z "${!var}" ]; then
         warn "Environment variable ${YELLOW}$var${NC} is not set. Can't continue 🫸⚠️"
@@ -35,7 +35,12 @@ for var in "${required_vars[@]}"; do
     fi
 done
 
-DUMP_DIR="${RAID_PATH}/backthatup/psql/"
+if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "prod" ]]; then
+    error "ENVIRONMENT must be ${YELLOW}staging${NC} or ${YELLOW}prod${NC}"
+    exit 1
+fi
+
+DUMP_DIR="${RAID_PATH}/backthatup/$ENVIRONMENT/psql/"
 
 if [ ! -d "$RAID_PATH" ]; then
     error "RAID mount path not found: ${CYAN}$RAID_PATH${NC} 😱"
@@ -69,9 +74,10 @@ fi
 
 echo -e "$divider"
 echo -e "🐘🔄 ${BOLD}Starting PostgreSQL Restore Process${NC} 🚀"
+info   "🏷️  Environment: ${YELLOW}${ENVIRONMENT}${NC}"
 info   "💾 Database : ${YELLOW}${POSTGRES_DB}${NC}"
 info   "🌐 Host     : ${YELLOW}${POSTGRES_HOST}${NC}:${YELLOW}${POSTGRES_PORT}${NC}"
-info   "💿 Source   : ${YELLOW}${RAID_PATH}/backthatup${NC}"
+info   "💿 Source   : ${YELLOW}${RAID_PATH}/backthatup/${ENVIRONMENT}${NC}"
 info   "📄 Backup   : ${YELLOW}$LATEST_BACKUP${NC}"
 
 if [ -d "$LATEST_BACKUP" ]; then
