@@ -1,0 +1,75 @@
+pipeline {
+    agent any
+
+    environment {
+        WORKSPACE_DIR = "${WORKSPACE}"
+    }
+
+    stages {
+        stage('Create .env file') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'vault-config', usernameVariable: 'VAULT_ADDR', passwordVariable: 'VAULT_TOKEN')]) {
+                    script {
+                        sh '''#!/bin/bash
+                            set -e
+
+                            echo "📦 CREATE .ENV FILE FROM VAULT"
+
+                            export VAULT_ADDR="${VAULT_ADDR}"
+                            export VAULT_TOKEN="${VAULT_TOKEN}"
+
+                            vault kv get -field=dev-env cubbyhole/beyoutique-crm > "${WORKSPACE}/.env"
+                            ls -la "${WORKSPACE}/.env"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Backup MinIO') {
+            steps {
+                script {
+                    sh '''#!/bin/bash
+                        set -e
+
+                        echo "🚀 Starting MinIO backup"
+
+                        cd "${WORKSPACE}"
+                        bash prevention/minio-backup.sh
+
+                        echo "✅ MinIO backup completed"
+                    '''
+                }
+            }
+        }
+
+        stage('Persist to RAID') {
+            steps {
+                script {
+                    sh '''#!/bin/bash
+                        set -e
+
+                        echo "💾 Persisting backup to RAID storage"
+
+                        cd "${WORKSPACE}"
+                        bash storage/persist-dumps.sh
+
+                        echo "✅ Backup persisted to RAID"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo "✅ MinIO backup pipeline completed successfully"
+        }
+        failure {
+            echo "❌ MinIO backup pipeline failed"
+        }
+    }
+}

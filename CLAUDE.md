@@ -14,7 +14,19 @@ make restore      # Restore PostgreSQL + MinIO from RAID
 make persist      # Copy local dumps to RAID (with type-aware stats)
 make cleanup      # Remove old backups from RAID (PostgreSQL + MinIO)
 make e2e-run      # Full workflow: backup -> persist -> restore -> cleanup
+
+# Individual service commands
+make backup-psql    # PostgreSQL backup only
+make backup-minio   # MinIO backup only
+make restore-psql   # PostgreSQL restore only
+make restore-minio  # MinIO restore only
 ```
+
+## Requirements
+
+- PostgreSQL client tools (`pg_dump`, `pg_restore`)
+- MinIO client (`mc`) - install via `brew install minio/stable/mc`
+- Bash shell
 
 ## Architecture
 
@@ -32,9 +44,10 @@ The codebase is organized by backup workflow stages:
 
 - All scripts use `set -e` for strict error handling
 - Parallel operations are capped at 4 jobs regardless of CPU count
-- Backup naming: `{DB_NAME}_{YYYY}_{MMDD}_{HHMMSS}`
+- Backup naming: PostgreSQL `{DB_NAME}_{YYYYMMDD}_{HHMMSS}`, MinIO `{bucket}_{YYYY}_{MMDD}_{HHMMSS}.tar.gz`
 - Cleanup policy: keeps 3 most recent backups, deletes those older than 2 days
 - Restore tolerates `unrecognized configuration parameter` errors (version compatibility)
+- MinIO client alias is configured per-script (`backdatup_minio` for backup, `backdatup_minio_restore` for restore)
 
 ## Configuration
 

@@ -1,0 +1,114 @@
+pipeline {
+    agent any
+
+    parameters {
+        choice(
+            name: 'DB_NAME',
+            choices: ['ffm', 'payment-gate'],
+            description: 'PostgreSQL database name to backup'
+        )
+    }
+
+    environment {
+        WORKSPACE_DIR = "${WORKSPACE}"
+    }
+
+    stages {
+        stage('Validate Parameters') {
+            steps {
+                script {
+                    if (!params.DB_NAME?.trim()) {
+                        error('DB_NAME parameter is required')
+                    }
+                    echo "🐘 Backing up database: ${params.DB_NAME}"
+                }
+            }
+        }
+
+        stage('Create .env file') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'vault-config', usernameVariable: 'VAULT_ADDR', passwordVariable: 'VAULT_TOKEN')]) {
+                    script {
+                        sh '''#!/bin/bash
+                            set -e
+
+                            echo "📦 CREATE .ENV FILE FROM VAULT"
+
+                            export VAULT_ADDR="${VAULT_ADDR}"
+                            export VAULT_TOKEN="${VAULT_TOKEN}"
+
+                            vault kv get -field=dev-env cubbyhole/beyoutique-crm > "${WORKSPACE}/.env"
+                            ls -la "${WORKSPACE}/.env"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Override DB Name') {
+            steps {
+                script {
+                    sh """#!/bin/bash
+                        set -e
+
+                        echo "🔧 Overriding POSTGRES_DB with: ${params.DB_NAME}"
+
+                        if grep -q "^POSTGRES_DB=" "${WORKSPACE}/.env"; then
+                            sed -i 's/^POSTGRES_DB=.*/POSTGRES_DB=${params.DB_NAME}/' "${WORKSPACE}/.env"
+                        else
+                            echo "POSTGRES_DB=${params.DB_NAME}" >> "${WORKSPACE}/.env"
+                        fi
+
+                        echo "✅ .env configured for database: ${params.DB_NAME}"
+                    """
+                }
+            }
+        }
+
+        stage('Backup PostgreSQL') {
+            steps {
+                script {
+                    sh '''#!/bin/bash
+                        set -e
+
+                        echo "🚀 Starting PostgreSQL backup"
+
+                        cd "${WORKSPACE}"
+                        bash prevention/psql-backup.sh
+
+                        echo "✅ PostgreSQL backup completed"
+                    '''
+                }
+            }
+        }
+
+        stage('Persist to RAID') {
+            steps {
+                script {
+                    sh '''#!/bin/bash
+                        set -e
+
+                        echo "💾 Persisting backup to RAID storage"
+
+                        cd "${WORKSPACE}"
+                        bash storage/persist-dumps.sh
+
+                        echo "✅ Backup persisted to RAID"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo "✅ PostgreSQL backup pipeline completed successfully"
+        }
+        failure {
+            echo "❌ PostgreSQL backup pipeline failed"
+        }
+    }
+}
