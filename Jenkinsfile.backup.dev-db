@@ -1,30 +1,16 @@
 pipeline {
     agent { label 'backup-agent' }
 
-    parameters {
-        choice(
-            name: 'DB_NAME',
-            choices: ['ffm', 'payment-gate'],
-            description: 'PostgreSQL database name to backup'
-        )
+    triggers {
+        cron('0 2 * * *')  // Daily at 2 AM
     }
 
     environment {
         WORKSPACE_DIR = "${WORKSPACE}"
+        DATABASES = 'ffm,payment-gate'
     }
 
     stages {
-        stage('Validate Parameters') {
-            steps {
-                script {
-                    if (!params.DB_NAME?.trim()) {
-                        error('DB_NAME parameter is required')
-                    }
-                    echo "🐘 Backing up database: ${params.DB_NAME}"
-                }
-            }
-        }
-
         stage('Create .env file') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'vault-config', usernameVariable: 'VAULT_ADDR', passwordVariable: 'VAULT_TOKEN')]) {
@@ -45,39 +31,36 @@ pipeline {
             }
         }
 
-        stage('Override DB Name') {
+        stage('Backup All Databases') {
             steps {
                 script {
-                    sh """#!/bin/bash
-                        set -e
+                    def databases = env.DATABASES.split(',')
 
-                        echo "🔧 Overriding POSTGRES_DB with: ${params.DB_NAME}"
+                    databases.each { dbName ->
+                        echo "🐘 Backing up database: ${dbName}"
 
-                        if grep -q "^POSTGRES_DB=" "${WORKSPACE}/.env"; then
-                            sed -i 's/^POSTGRES_DB=.*/POSTGRES_DB=${params.DB_NAME}/' "${WORKSPACE}/.env"
-                        else
-                            echo "POSTGRES_DB=${params.DB_NAME}" >> "${WORKSPACE}/.env"
-                        fi
+                        sh """#!/bin/bash
+                            set -e
 
-                        echo "✅ .env configured for database: ${params.DB_NAME}"
-                    """
-                }
-            }
-        }
+                            echo "🔧 Configuring for database: ${dbName}"
 
-        stage('Backup PostgreSQL') {
-            steps {
-                script {
-                    sh '''#!/bin/bash
-                        set -e
+                            cp "${WORKSPACE}/.env" "${WORKSPACE}/.env.current"
 
-                        echo "🚀 Starting PostgreSQL backup"
+                            if grep -q "^POSTGRES_DB=" "${WORKSPACE}/.env.current"; then
+                                sed -i 's/^POSTGRES_DB=.*/POSTGRES_DB=${dbName}/' "${WORKSPACE}/.env.current"
+                            else
+                                echo "POSTGRES_DB=${dbName}" >> "${WORKSPACE}/.env.current"
+                            fi
 
-                        cd "${WORKSPACE}"
-                        bash prevention/psql-backup.sh
+                            mv "${WORKSPACE}/.env.current" "${WORKSPACE}/.env"
 
-                        echo "✅ PostgreSQL backup completed"
-                    '''
+                            echo "🚀 Starting PostgreSQL backup for ${dbName}"
+                            cd "${WORKSPACE}"
+                            bash prevention/psql-backup.sh
+
+                            echo "✅ PostgreSQL backup completed for ${dbName}"
+                        """
+                    }
                 }
             }
         }
@@ -88,12 +71,12 @@ pipeline {
                     sh '''#!/bin/bash
                         set -e
 
-                        echo "💾 Persisting backup to RAID storage"
+                        echo "💾 Persisting backups to RAID storage"
 
                         cd "${WORKSPACE}"
                         bash storage/persist-dumps.sh
 
-                        echo "✅ Backup persisted to RAID"
+                        echo "✅ Backups persisted to RAID"
                     '''
                 }
             }
