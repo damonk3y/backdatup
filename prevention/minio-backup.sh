@@ -80,7 +80,7 @@ for BUCKET in $BUCKETS; do
     OBJECT_COUNT=$(mc ls --recursive "$MC_ALIAS/$BUCKET/" 2>/dev/null | wc -l | tr -d ' ')
     if [ "$OBJECT_COUNT" -eq 0 ]; then
         echo -e "  ${YELLOW}Skipping empty bucket${NC}"
-        ((SKIPPED_COUNT++))
+        SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
         continue
     fi
 
@@ -96,10 +96,10 @@ for BUCKET in $BUCKETS; do
         if tar -czf "$TAR_PATH" -C "$TEMP_DIR" "$BUCKET"; then
             SIZE=$(du -h "$TAR_PATH" | cut -f1)
             echo -e "  ${GREEN}Created:${NC} ${TAR_NAME} (${SIZE})"
-            ((SUCCESS_COUNT++))
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
         else
             echo -e "  ${RED}Failed to create archive${NC}"
-            ((FAIL_COUNT++))
+            FAIL_COUNT=$((FAIL_COUNT + 1))
         fi
     else
         echo -e "  ${RED}Failed to download bucket contents${NC}"
