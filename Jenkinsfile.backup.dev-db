@@ -1,5 +1,5 @@
 pipeline {
-    agent any
+    agent { label 'backup-agent' }
 
     parameters {
         choice(
@@ -37,7 +37,7 @@ pipeline {
                             export VAULT_ADDR="${VAULT_ADDR}"
                             export VAULT_TOKEN="${VAULT_TOKEN}"
 
-                            vault kv get -field=dev-env cubbyhole/beyoutique-crm > "${WORKSPACE}/.env"
+                            vault kv get -field=dev-env cubbyhole/backdatup > "${WORKSPACE}/.env"
                             ls -la "${WORKSPACE}/.env"
                         '''
                     }
