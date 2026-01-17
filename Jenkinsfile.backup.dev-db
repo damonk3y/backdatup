@@ -81,6 +81,23 @@ pipeline {
                 }
             }
         }
+
+        stage('Cleanup Old Backups') {
+            steps {
+                script {
+                    sh '''#!/bin/bash
+                        set -e
+
+                        echo "🧹 Cleaning up old backups from RAID"
+
+                        cd "${WORKSPACE}"
+                        bash storage/cleanup.sh
+
+                        echo "✅ Old backups cleaned up"
+                    '''
+                }
+            }
+        }
     }
 
     post {
