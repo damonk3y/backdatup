@@ -84,7 +84,9 @@ if [ "$HAS_MINIO" = true ]; then
 fi
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
 
-CUTOFF_TIME=$(date -v-2d +%s 2>/dev/null || date -d "2 days ago" +%s)
+# Calculate 2 days ago in seconds (works on all platforms including BusyBox)
+CURRENT_TIME=$(date +%s)
+CUTOFF_TIME=$((CURRENT_TIME - 2 * 24 * 60 * 60))
 
 PSQL_KEPT=0
 PSQL_DELETED=0
