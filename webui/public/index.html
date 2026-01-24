@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BackDatUp</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <h1 class="logo">BackDatUp</h1>
+      </div>
+      <div class="header-right">
+        <span id="active-jobs" class="active-indicator hidden">
+          <span class="spinner-sm"></span>
+          <span id="active-count">0</span> running
+        </span>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="activity">Activity</button>
+      <button class="tab" data-tab="jobs">Jobs</button>
+    </nav>
+
+    <!-- Activity Tab -->
+    <main id="tab-activity" class="tab-content active">
+      <!-- Stats Bar -->
+      <div class="stats-bar">
+        <div class="stat">
+          <span class="stat-value" id="stat-total-jobs">-</span>
+          <span class="stat-label">Jobs</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="stat-runs-today">-</span>
+          <span class="stat-label">Runs (24h)</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="stat-success-rate">-</span>
+          <span class="stat-label">Success Rate</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="stat-last-success">-</span>
+          <span class="stat-label">Last Success</span>
+        </div>
+      </div>
+
+      <!-- Activity Feed -->
+      <section class="section">
+        <div class="section-header">
+          <h2>Recent Activity</h2>
+        </div>
+        <div id="activity-feed" class="activity-feed">
+          <div class="loading">Loading activity...</div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Jobs Tab -->
+    <main id="tab-jobs" class="tab-content">
+      <div class="section-header">
+        <h2>Backup Jobs</h2>
+        <button id="btn-new-job" class="btn btn-primary">+ New Job</button>
+      </div>
+
+      <div id="jobs-table-container">
+        <table class="jobs-table" id="jobs-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Last Run</th>
+              <th>Next Scheduled</th>
+              <th>Success Rate</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="jobs-tbody">
+            <tr><td colspan="6" class="loading">Loading jobs...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+
+    <!-- Job Modal -->
+    <div id="job-modal" class="modal hidden">
+      <div class="modal-backdrop" onclick="closeModal()"></div>
+      <div class="modal-panel">
+        <div class="modal-header">
+          <h3 id="modal-title">New Job</h3>
+          <button class="btn-close" onclick="closeModal()">&times;</button>
+        </div>
+        <form id="job-form" class="modal-body">
+          <input type="hidden" id="job-id">
+
+          <div class="form-group">
+            <label for="job-name">Name</label>
+            <input type="text" id="job-name" required placeholder="Production Database Backup">
+          </div>
+
+          <div class="form-group">
+            <label for="job-description">Description</label>
+            <input type="text" id="job-description" placeholder="Optional description">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="job-type">Type</label>
+              <select id="job-type">
+                <option value="full">Full (PostgreSQL + MinIO)</option>
+                <option value="psql">PostgreSQL Only</option>
+                <option value="minio">MinIO Only</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Workflow Steps</label>
+            <div class="checkbox-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="step-backup" checked>
+                <span>Backup</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="step-persist" checked>
+                <span>Persist</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="step-cleanup" checked>
+                <span>Cleanup</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Environment Variables</label>
+            <div id="env-vars-container" class="env-vars-container"></div>
+            <button type="button" class="btn btn-sm" onclick="addEnvVar()">+ Add Variable</button>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Job</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Schedule Modal -->
+    <div id="schedule-modal" class="modal hidden">
+      <div class="modal-backdrop" onclick="closeScheduleModal()"></div>
+      <div class="modal-panel modal-sm">
+        <div class="modal-header">
+          <h3 id="schedule-modal-title">Add Schedule</h3>
+          <button class="btn-close" onclick="closeScheduleModal()">&times;</button>
+        </div>
+        <form id="schedule-form" class="modal-body">
+          <input type="hidden" id="schedule-job-id">
+          <input type="hidden" id="schedule-id">
+
+          <div class="form-group">
+            <label for="cron-expression">Cron Expression</label>
+            <input type="text" id="cron-expression" required placeholder="0 2 * * *">
+            <small id="cron-preview" class="form-hint"></small>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="schedule-enabled" checked>
+              <span>Enabled</span>
+            </label>
+          </div>
+
+          <div class="cron-examples">
+            <p>Examples:</p>
+            <code>0 2 * * *</code> Daily at 2 AM<br>
+            <code>0 */6 * * *</code> Every 6 hours<br>
+            <code>0 0 * * 0</code> Weekly on Sunday
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeScheduleModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Job Detail Modal -->
+    <div id="job-detail-modal" class="modal hidden">
+      <div class="modal-backdrop" onclick="closeJobDetailModal()"></div>
+      <div class="modal-panel">
+        <div class="modal-header">
+          <h3 id="job-detail-title">Job Details</h3>
+          <button class="btn-close" onclick="closeJobDetailModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="job-detail-content"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

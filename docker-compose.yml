@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  webui:
+    build:
+      context: .
+      dockerfile: webui/Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist SQLite database
+      - webui-data:/app/webui/data
+      # Mount RAID storage (adjust path as needed)
+      # - /path/to/raid:/raid
+      # Mount local dumps directory
+      - ./dumps:/app/dumps
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    restart: unless-stopped
+
+volumes:
+  webui-data:

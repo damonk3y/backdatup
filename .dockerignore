@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+
+# CI/CD
+ci/
+
+# Documentation
+*.md
+LICENSE
+
+# IDE
+.vscode/
+.idea/
+
+# Local data
+dumps/
+webui/data/
+*.db
+
+# Env files (secrets)
+.env
+.env.*
+!.env.example
+
+# Node modules (will be installed in container)
+webui/node_modules/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

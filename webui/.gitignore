@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.bun/
+
+# Database
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+bun-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build
+dist/
+build/
+.cache/
+
+# Temp files
+*.tmp
+*.temp
+.env.*

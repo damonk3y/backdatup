@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Run Logs - BackDatUp</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-primary: #0d0d0d;
+      --bg-secondary: #161616;
+      --bg-tertiary: #1f1f1f;
+      --success: #22c55e;
+      --error: #ef4444;
+      --running: #8b5cf6;
+      --text-primary: #e5e5e5;
+      --text-secondary: #999;
+      --text-muted: #666;
+      --border: #2a2a2a;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+    }
+
+    .header {
+      position: sticky;
+      top: 0;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .header-info {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .header-meta {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .status-success {
+      background: rgba(34, 197, 94, 0.1);
+      color: var(--success);
+    }
+
+    .status-failed {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--error);
+    }
+
+    .status-running {
+      background: rgba(139, 92, 246, 0.1);
+      color: var(--running);
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+    }
+
+    .btn:hover {
+      background: #252525;
+      border-color: #333;
+      color: var(--text-primary);
+    }
+
+    .btn-danger {
+      color: var(--error);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: var(--error);
+    }
+
+    .log-container {
+      padding: 0;
+    }
+
+    .log-output {
+      font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 24px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      min-height: calc(100vh - 70px);
+      background: var(--bg-primary);
+      color: var(--text-secondary);
+    }
+
+    /* ANSI Color classes */
+    .ansi-black { color: #000000; }
+    .ansi-red { color: #ff5555; }
+    .ansi-green { color: #50fa7b; }
+    .ansi-yellow { color: #f1fa8c; }
+    .ansi-blue { color: #6272a4; }
+    .ansi-magenta { color: #ff79c6; }
+    .ansi-cyan { color: #8be9fd; }
+    .ansi-white { color: #f8f8f2; }
+
+    .ansi-bright-black { color: #6272a4; }
+    .ansi-bright-red { color: #ff6e6e; }
+    .ansi-bright-green { color: #69ff94; }
+    .ansi-bright-yellow { color: #ffffa5; }
+    .ansi-bright-blue { color: #d6acff; }
+    .ansi-bright-magenta { color: #ff92df; }
+    .ansi-bright-cyan { color: #a4ffff; }
+    .ansi-bright-white { color: #ffffff; }
+
+    .ansi-bg-black { background-color: #000000; }
+    .ansi-bg-red { background-color: #ff5555; }
+    .ansi-bg-green { background-color: #50fa7b; }
+    .ansi-bg-yellow { background-color: #f1fa8c; }
+    .ansi-bg-blue { background-color: #6272a4; }
+    .ansi-bg-magenta { background-color: #ff79c6; }
+    .ansi-bg-cyan { background-color: #8be9fd; }
+    .ansi-bg-white { background-color: #f8f8f2; }
+
+    .ansi-bold { font-weight: bold; }
+    .ansi-dim { opacity: 0.7; }
+    .ansi-italic { font-style: italic; }
+    .ansi-underline { text-decoration: underline; }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: calc(100vh - 70px);
+      color: var(--text-muted);
+    }
+
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--running);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 12px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .error {
+      color: var(--error);
+      padding: 40px;
+      text-align: center;
+    }
+
+    /* Auto-scroll indicator */
+    .auto-scroll {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .auto-scroll:hover {
+      border-color: #333;
+      color: var(--text-secondary);
+    }
+
+    .auto-scroll.active {
+      border-color: var(--success);
+      color: var(--success);
+    }
+
+    .auto-scroll-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .auto-scroll.active .auto-scroll-dot {
+      background: var(--success);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-info">
+      <h1 id="job-name">Loading...</h1>
+      <span id="status-badge" class="status-badge">...</span>
+      <span id="header-meta" class="header-meta"></span>
+    </div>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="refreshLogs()">Refresh</button>
+      <button id="cancel-btn" class="btn btn-danger" style="display: none;" onclick="cancelRun()">Cancel</button>
+    </div>
+  </div>
+
+  <div class="log-container">
+    <div id="log-output" class="log-output">
+      <div class="loading">
+        <div class="spinner"></div>
+        Loading logs...
+      </div>
+    </div>
+  </div>
+
+  <div id="auto-scroll" class="auto-scroll active" onclick="toggleAutoScroll()">
+    <span class="auto-scroll-dot"></span>
+    Auto-scroll
+  </div>
+
+  <script>
+    const runId = new URLSearchParams(window.location.search).get('id');
+    let autoScroll = true;
+    let refreshInterval = null;
+
+    // ANSI to HTML converter
+    function ansiToHtml(text) {
+      if (!text) return '';
+
+      const ansiColors = {
+        '30': 'ansi-black',
+        '31': 'ansi-red',
+        '32': 'ansi-green',
+        '33': 'ansi-yellow',
+        '34': 'ansi-blue',
+        '35': 'ansi-magenta',
+        '36': 'ansi-cyan',
+        '37': 'ansi-white',
+        '90': 'ansi-bright-black',
+        '91': 'ansi-bright-red',
+        '92': 'ansi-bright-green',
+        '93': 'ansi-bright-yellow',
+        '94': 'ansi-bright-blue',
+        '95': 'ansi-bright-magenta',
+        '96': 'ansi-bright-cyan',
+        '97': 'ansi-bright-white',
+      };
+
+      const ansiBgColors = {
+        '40': 'ansi-bg-black',
+        '41': 'ansi-bg-red',
+        '42': 'ansi-bg-green',
+        '43': 'ansi-bg-yellow',
+        '44': 'ansi-bg-blue',
+        '45': 'ansi-bg-magenta',
+        '46': 'ansi-bg-cyan',
+        '47': 'ansi-bg-white',
+      };
+
+      const ansiStyles = {
+        '1': 'ansi-bold',
+        '2': 'ansi-dim',
+        '3': 'ansi-italic',
+        '4': 'ansi-underline',
+      };
+
+      // Escape HTML
+      let html = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      // Parse ANSI codes
+      let currentClasses = [];
+
+      html = html.replace(/\x1b\[([0-9;]*)m/g, (match, codes) => {
+        if (!codes || codes === '0') {
+          // Reset
+          const closeSpans = currentClasses.length > 0 ? '</span>' : '';
+          currentClasses = [];
+          return closeSpans;
+        }
+
+        const codeList = codes.split(';');
+        const newClasses = [];
+
+        for (const code of codeList) {
+          if (ansiColors[code]) {
+            newClasses.push(ansiColors[code]);
+          } else if (ansiBgColors[code]) {
+            newClasses.push(ansiBgColors[code]);
+          } else if (ansiStyles[code]) {
+            newClasses.push(ansiStyles[code]);
+          }
+        }
+
+        if (newClasses.length > 0) {
+          const closeSpans = currentClasses.length > 0 ? '</span>' : '';
+          currentClasses = newClasses;
+          return closeSpans + `<span class="${newClasses.join(' ')}">`;
+        }
+
+        return '';
+      });
+
+      // Close any remaining spans
+      if (currentClasses.length > 0) {
+        html += '</span>';
+      }
+
+      return html;
+    }
+
+    async function loadLogs() {
+      if (!runId) {
+        document.getElementById('log-output').innerHTML = '<div class="error">No run ID specified</div>';
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/runs/${runId}`);
+        if (!res.ok) {
+          throw new Error('Failed to load run');
+        }
+
+        const run = await res.json();
+
+        // Update header
+        document.getElementById('job-name').textContent = `Run #${run.id} - ${run.job_name}`;
+        document.title = `Run #${run.id} - ${run.job_name} - BackDatUp`;
+
+        const statusBadge = document.getElementById('status-badge');
+        statusBadge.textContent = run.status;
+        statusBadge.className = `status-badge status-${run.status}`;
+
+        const startTime = new Date(run.started_at).toLocaleString();
+        const endTime = run.finished_at ? new Date(run.finished_at).toLocaleString() : 'In progress...';
+        document.getElementById('header-meta').textContent = `Started: ${startTime} | Ended: ${endTime}`;
+
+        // Show cancel button if running
+        document.getElementById('cancel-btn').style.display = run.status === 'running' ? 'block' : 'none';
+
+        // Render logs with ANSI colors
+        const logOutput = document.getElementById('log-output');
+        logOutput.innerHTML = ansiToHtml(run.output || 'No output yet...');
+
+        // Auto-scroll to bottom
+        if (autoScroll) {
+          window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        // Continue refreshing if running
+        if (run.status === 'running') {
+          if (!refreshInterval) {
+            refreshInterval = setInterval(loadLogs, 2000);
+          }
+        } else {
+          if (refreshInterval) {
+            clearInterval(refreshInterval);
+            refreshInterval = null;
+          }
+        }
+
+      } catch (err) {
+        document.getElementById('log-output').innerHTML = `<div class="error">Error: ${err.message}</div>`;
+      }
+    }
+
+    function refreshLogs() {
+      loadLogs();
+    }
+
+    async function cancelRun() {
+      if (!confirm('Are you sure you want to cancel this run?')) return;
+
+      try {
+        const res = await fetch(`/api/runs/${runId}/cancel`, { method: 'POST' });
+        if (res.ok) {
+          loadLogs();
+        } else {
+          const err = await res.json();
+          alert('Failed to cancel: ' + err.error);
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    function toggleAutoScroll() {
+      autoScroll = !autoScroll;
+      const el = document.getElementById('auto-scroll');
+      el.classList.toggle('active', autoScroll);
+    }
+
+    // Detect manual scroll
+    let lastScrollTop = 0;
+    window.addEventListener('scroll', () => {
+      const st = window.pageYOffset || document.documentElement.scrollTop;
+      if (st < lastScrollTop && autoScroll) {
+        // Scrolling up - disable auto-scroll
+        autoScroll = false;
+        document.getElementById('auto-scroll').classList.remove('active');
+      }
+      lastScrollTop = st <= 0 ? 0 : st;
+    });
+
+    // Load on start
+    loadLogs();
+  </script>
+</body>
+</html>

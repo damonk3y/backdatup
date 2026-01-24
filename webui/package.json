@@ -1,0 +1,15 @@
+{
+  "name": "backdatup-webui",
+  "version": "1.0.0",
+  "description": "Web UI for BackDatUp backup management",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "bun run src/server.js",
+    "dev": "bun --watch src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "node-cron": "^3.0.3",
+    "uuid": "^10.0.0"
+  }
+}

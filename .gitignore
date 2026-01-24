@@ -1,3 +1,25 @@
+# Backup data
 dumps/
 raid_path_test/
+
+# Environment
 .env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Docker
+.docker/

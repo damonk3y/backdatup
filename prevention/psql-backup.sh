@@ -12,12 +12,15 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-if [ ! -f "$PROJECT_ROOT/.env" ]; then
-    echo -e "${RED}${BOLD}❌✗ Error:${NC} .env file not found in ${CYAN}$PROJECT_ROOT${NC} 😱"
+# Use BACKDATUP_ENV_FILE if set (from web UI), otherwise fall back to .env
+ENV_FILE="${BACKDATUP_ENV_FILE:-$PROJECT_ROOT/.env}"
+
+if [ ! -f "$ENV_FILE" ]; then
+    echo -e "${RED}${BOLD}❌✗ Error:${NC} .env file not found at ${CYAN}$ENV_FILE${NC} 😱"
     exit 1
 fi
 
-source "$PROJECT_ROOT/.env"
+source "$ENV_FILE"
 
 required_vars=("POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_HOST" "POSTGRES_PORT" "POSTGRES_DB" "ENVIRONMENT")
 for var in "${required_vars[@]}"; do
@@ -32,7 +35,7 @@ if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "prod" ]]; then
     exit 1
 fi
 
-DUMP_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT/psql/"
+DUMP_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT/psql"
 mkdir -p "$DUMP_DIR"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
