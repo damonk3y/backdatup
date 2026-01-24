@@ -27,11 +27,6 @@ if [ -z "${RAID_PATH}" ]; then
     exit 1
 fi
 
-if [ -z "${POSTGRES_DB}" ]; then
-    echo -e "${RED}${BOLD}❌✗ Error:${NC} POSTGRES_DB environment variable is not set ⚠️"
-    exit 1
-fi
-
 if [ -z "${ENVIRONMENT}" ]; then
     echo -e "${RED}${BOLD}❌✗ Error:${NC} ENVIRONMENT variable is not set ⚠️"
     exit 1
@@ -94,91 +89,194 @@ MINIO_KEPT=0
 MINIO_DELETED=0
 TOTAL_SIZE_FREED=0
 
-cleanup_backups() {
-    local target_dir="$1"
-    local pattern="$2"
-    local backup_type="$3"
-    local icon="$4"
-    local kept_var="$5"
-    local deleted_var="$6"
+# Extract backup type from PostgreSQL backup name (e.g., "ffm_20260124_143851" -> "ffm")
+extract_psql_type() {
+    local name="$1"
+    # Remove date pattern _YYYYMMDD_HHMMSS from end
+    echo "$name" | sed -E 's/_[0-9]{8}_[0-9]{6}$//'
+}
 
-    local backups=()
+# Extract backup type from MinIO backup name (e.g., "store-logos_2026_0124_150253.tar.gz" -> "store-logos")
+extract_minio_type() {
+    local name="$1"
+    # Remove date pattern _YYYY_MMDD_HHMMSS.tar.gz from end
+    echo "$name" | sed -E 's/_[0-9]{4}_[0-9]{4}_[0-9]{6}\.tar\.gz$//'
+}
 
-    while IFS= read -r -d '' backup; do
-        backups+=("$backup")
-    done < <(find "$target_dir" -maxdepth 1 -type d -name "${pattern}_*" -print0 2>/dev/null | sort -rz)
-
-    while IFS= read -r -d '' backup; do
-        backups+=("$backup")
-    done < <(find "$target_dir" -maxdepth 1 -type f \( -name "${pattern}_*.dump" -o -name "${pattern}.dump" -o -name "${pattern}_*.tar.gz" -o -name "*_*.tar.gz" \) -print0 2>/dev/null | sort -rz)
-
-    local backup_count=${#backups[@]}
-
-    if [ "$backup_count" -eq 0 ]; then
-        echo -e "\n${YELLOW}${BOLD}⚠️  Warning:${NC} No ${backup_type} backups found 📭"
-        return
-    fi
-
-    echo -e "\n${icon} ${BOLD}${backup_type} Backups:${NC} Found ${YELLOW}${backup_count}${NC} backup(s)"
-
-    if [ "$backup_count" -lt 3 ]; then
-        echo -e "   ${YELLOW}⚠️  Skipping:${NC} Only ${backup_count} backup(s). Need at least 3 to cleanup. 🛡️"
-        eval "$kept_var=\$backup_count"
-        return
-    fi
-
-    echo ""
+# Cleanup backups for a specific type within a directory
+# Args: backup_type, backup_files (newline-separated list of full paths)
+cleanup_type_backups() {
+    local backup_type="$1"
+    local backups_list="$2"
+    local kept_var="$3"
+    local deleted_var="$4"
 
     local local_kept=0
     local local_deleted=0
 
-    for i in "${!backups[@]}"; do
-        local backup="${backups[$i]}"
-        local backup_name=$(basename "$backup")
-        local backup_mtime=$(stat -f%m "$backup" 2>/dev/null || stat -c%Y "$backup" 2>/dev/null || echo 0)
+    # Sort backups by modification time (newest first)
+    local sorted_backups
+    sorted_backups=$(echo "$backups_list" | while read -r backup; do
+        if [ -n "$backup" ]; then
+            local mtime
+            mtime=$(stat -c%Y "$backup" 2>/dev/null || stat -f%m "$backup" 2>/dev/null || echo 0)
+            echo "$mtime|$backup"
+        fi
+    done | sort -t'|' -k1 -rn | cut -d'|' -f2)
 
-        if [ "$i" -lt 3 ]; then
-            local_kept=$((local_kept + 1))
-            local backup_date=$(date -r "$backup_mtime" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "@$backup_mtime" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown")
-            echo -e "   🛡️  ${GREEN}Keeping${NC} ${CYAN}${backup_name}${NC} (latest ${local_kept}/3)"
+    local count=0
+    local total_count
+    total_count=$(echo "$sorted_backups" | grep -c . || echo 0)
+
+    echo -e "   📁 ${BOLD}${backup_type}${NC}: ${YELLOW}${total_count}${NC} backup(s)"
+
+    echo "$sorted_backups" | while read -r backup; do
+        if [ -z "$backup" ]; then
             continue
         fi
 
+        count=$((count + 1))
+        local backup_name
+        backup_name=$(basename "$backup")
+        local backup_mtime
+        backup_mtime=$(stat -c%Y "$backup" 2>/dev/null || stat -f%m "$backup" 2>/dev/null || echo 0)
+
+        # Always keep the latest backup (first one after sorting)
+        if [ "$count" -eq 1 ]; then
+            echo -e "      🛡️  ${GREEN}Keeping${NC} ${CYAN}${backup_name}${NC} (latest)"
+            local_kept=$((local_kept + 1))
+            continue
+        fi
+
+        # Delete if older than 2 days
         if [ "$backup_mtime" -lt "$CUTOFF_TIME" ]; then
             local backup_size
             if [ -d "$backup" ]; then
                 backup_size=$(du -sk "$backup" 2>/dev/null | cut -f1 || echo 0)
             else
-                backup_size=$(stat -f%z "$backup" 2>/dev/null || stat -c%s "$backup" 2>/dev/null || echo 0)
+                backup_size=$(stat -c%s "$backup" 2>/dev/null || stat -f%z "$backup" 2>/dev/null || echo 0)
                 backup_size=$((backup_size / 1024))
             fi
 
-            echo -e "   🗑️  ${YELLOW}Deleting${NC} ${CYAN}${backup_name}${NC} (older than 2 days)"
+            echo -e "      🗑️  ${YELLOW}Deleting${NC} ${CYAN}${backup_name}${NC} (older than 2 days)"
 
             if rm -rf "$backup" 2>/dev/null; then
                 local_deleted=$((local_deleted + 1))
-                TOTAL_SIZE_FREED=$((TOTAL_SIZE_FREED + backup_size))
+                # Update global counter (subshell workaround using temp file)
+                echo "$backup_size" >> /tmp/cleanup_size_freed_$$
             else
-                echo -e "      ${RED}✗${NC} Failed to delete"
+                echo -e "         ${RED}✗${NC} Failed to delete"
             fi
         else
+            echo -e "      🛡️  ${GREEN}Keeping${NC} ${CYAN}${backup_name}${NC} (less than 2 days old)"
             local_kept=$((local_kept + 1))
-            echo -e "   🛡️  ${GREEN}Keeping${NC} ${CYAN}${backup_name}${NC} (less than 2 days old)"
         fi
     done
 
-    eval "$kept_var=$local_kept"
-    eval "$deleted_var=$local_deleted"
+    # Return counts via temp files (subshell workaround)
+    echo "$local_kept" >> /tmp/cleanup_kept_${kept_var}_$$
+    echo "$local_deleted" >> /tmp/cleanup_deleted_${deleted_var}_$$
+}
+
+# Cleanup all backups in a directory, auto-detecting types
+cleanup_directory() {
+    local target_dir="$1"
+    local backup_kind="$2"  # "psql" or "minio"
+    local icon="$3"
+    local kept_var="$4"
+    local deleted_var="$5"
+
+    # Clean temp files
+    rm -f /tmp/cleanup_kept_${kept_var}_$$ /tmp/cleanup_deleted_${deleted_var}_$$ /tmp/cleanup_size_freed_$$
+
+    echo -e "\n${icon} ${BOLD}${backup_kind} Backups:${NC}"
+
+    # Collect all backups and group by type
+    declare -A type_backups
+
+    if [ "$backup_kind" = "PostgreSQL" ]; then
+        # PostgreSQL: directories matching pattern {name}_{YYYYMMDD}_{HHMMSS}
+        while IFS= read -r -d '' backup; do
+            local name
+            name=$(basename "$backup")
+            local btype
+            btype=$(extract_psql_type "$name")
+            if [ -n "$btype" ]; then
+                if [ -z "${type_backups[$btype]}" ]; then
+                    type_backups[$btype]="$backup"
+                else
+                    type_backups[$btype]="${type_backups[$btype]}"$'\n'"$backup"
+                fi
+            fi
+        done < <(find "$target_dir" -maxdepth 1 -type d -regex '.*/[^/]*_[0-9]\{8\}_[0-9]\{6\}$' -print0 2>/dev/null)
+    else
+        # MinIO: files matching pattern {name}_{YYYY}_{MMDD}_{HHMMSS}.tar.gz
+        while IFS= read -r -d '' backup; do
+            local name
+            name=$(basename "$backup")
+            local btype
+            btype=$(extract_minio_type "$name")
+            if [ -n "$btype" ]; then
+                if [ -z "${type_backups[$btype]}" ]; then
+                    type_backups[$btype]="$backup"
+                else
+                    type_backups[$btype]="${type_backups[$btype]}"$'\n'"$backup"
+                fi
+            fi
+        done < <(find "$target_dir" -maxdepth 1 -type f -name '*_*_*_*.tar.gz' -print0 2>/dev/null)
+    fi
+
+    local type_count=${#type_backups[@]}
+
+    if [ "$type_count" -eq 0 ]; then
+        echo -e "   ${YELLOW}⚠️  No backups found${NC} 📭"
+        return
+    fi
+
+    echo -e "   Found ${YELLOW}${type_count}${NC} backup type(s)\n"
+
+    # Process each type
+    for btype in "${!type_backups[@]}"; do
+        cleanup_type_backups "$btype" "${type_backups[$btype]}" "$kept_var" "$deleted_var"
+    done
+
+    # Sum up counts from temp files
+    local total_kept=0
+    local total_deleted=0
+
+    if [ -f /tmp/cleanup_kept_${kept_var}_$$ ]; then
+        while read -r count; do
+            total_kept=$((total_kept + count))
+        done < /tmp/cleanup_kept_${kept_var}_$$
+        rm -f /tmp/cleanup_kept_${kept_var}_$$
+    fi
+
+    if [ -f /tmp/cleanup_deleted_${deleted_var}_$$ ]; then
+        while read -r count; do
+            total_deleted=$((total_deleted + count))
+        done < /tmp/cleanup_deleted_${deleted_var}_$$
+        rm -f /tmp/cleanup_deleted_${deleted_var}_$$
+    fi
+
+    if [ -f /tmp/cleanup_size_freed_$$ ]; then
+        while read -r size; do
+            TOTAL_SIZE_FREED=$((TOTAL_SIZE_FREED + size))
+        done < /tmp/cleanup_size_freed_$$
+        rm -f /tmp/cleanup_size_freed_$$
+    fi
+
+    eval "$kept_var=$total_kept"
+    eval "$deleted_var=$total_deleted"
 }
 
 echo -e "\n🔍 ${BOLD}Analyzing backups...${NC}"
 
 if [ "$HAS_PSQL" = true ]; then
-    cleanup_backups "$PSQL_TARGET_DIR" "$POSTGRES_DB" "PostgreSQL" "🐘" "PSQL_KEPT" "PSQL_DELETED"
+    cleanup_directory "$PSQL_TARGET_DIR" "PostgreSQL" "🐘" "PSQL_KEPT" "PSQL_DELETED"
 fi
 
 if [ "$HAS_MINIO" = true ]; then
-    cleanup_backups "$MINIO_TARGET_DIR" "*" "MinIO" "📦" "MINIO_KEPT" "MINIO_DELETED"
+    cleanup_directory "$MINIO_TARGET_DIR" "MinIO" "📦" "MINIO_KEPT" "MINIO_DELETED"
 fi
 
 KEPT=$((PSQL_KEPT + MINIO_KEPT))
@@ -191,7 +289,7 @@ elif [ "$TOTAL_SIZE_FREED" -gt 1024 ]; then
     MB_SIZE=$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE_FREED / 1024}")
     SIZE_FORMATTED="${MB_SIZE} MB"
 else
-    SIZE_FORMATTED="${TOTAL_SIZE_FREED} MB"
+    SIZE_FORMATTED="${TOTAL_SIZE_FREED} KB"
 fi
 
 echo -e "\n${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
