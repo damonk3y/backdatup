@@ -42,6 +42,13 @@ function initTabs() {
     });
   });
 
+  // Restore tab from URL query param
+  const params = new URLSearchParams(window.location.search);
+  const tab = params.get('tab');
+  if (tab && (tab === 'activity' || tab === 'jobs')) {
+    switchToTab(tab);
+  }
+
   document.getElementById('breadcrumb-back').addEventListener('click', () => {
     closeLogViewer();
   });
@@ -55,6 +62,11 @@ function switchToTab(tabId) {
 
   document.querySelector(`.tab[data-tab="${tabId}"]`).classList.add('active');
   document.getElementById(`tab-${tabId}`).classList.add('active');
+
+  // Persist tab in URL
+  const url = new URL(window.location);
+  url.searchParams.set('tab', tabId);
+  history.replaceState(null, '', url);
 }
 
 function showBreadcrumb(parentLabel, currentLabel) {
@@ -249,7 +261,7 @@ function renderJobsTable() {
       <tr>
         <td>
           <span class="job-name">
-            <a class="job-name-link" onclick="showJobDetail(${job.id})">${escapeHtml(job.name)}</a>
+            <a class="job-name-link" onclick="showJobDetail(${job.id})" title="View details & runs">${escapeHtml(job.name)}</a>
           </span>
         </td>
         <td><span class="job-type">${getJobTypeLabel(job.job_type)}</span></td>
@@ -713,13 +725,23 @@ async function cancelInlineRun() {
 }
 
 function copyRawLogs() {
-  navigator.clipboard.writeText(rawLogOutput).then(() => {
-    const btn = event.target;
-    const original = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = original; }, 1500);
-  }).catch(() => {
-    // Fallback for older browsers
+  const btn = document.querySelector('[onclick="copyRawLogs()"]');
+  const original = btn ? btn.textContent : '';
+
+  function showCopied() {
+    if (btn) {
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    }
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(rawLogOutput).then(showCopied).catch(fallbackCopy);
+  } else {
+    fallbackCopy();
+  }
+
+  function fallbackCopy() {
     const textarea = document.createElement('textarea');
     textarea.value = rawLogOutput;
     textarea.style.position = 'fixed';
@@ -728,12 +750,8 @@ function copyRawLogs() {
     textarea.select();
     document.execCommand('copy');
     document.body.removeChild(textarea);
-
-    const btn = event.target;
-    const original = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = original; }, 1500);
-  });
+    showCopied();
+  }
 }
 
 // ANSI to HTML converter

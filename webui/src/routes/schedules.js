@@ -73,7 +73,7 @@ router.post('/jobs/:id/schedules', (req, res) => {
 });
 
 // PUT /api/schedules/:id - Update schedule
-router.put('/:id', (req, res) => {
+router.put('/schedules/:id', (req, res) => {
   try {
     const schedule = schedules.getById.get(req.params.id);
     if (!schedule) {
@@ -116,7 +116,7 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE /api/schedules/:id - Delete schedule
-router.delete('/:id', (req, res) => {
+router.delete('/schedules/:id', (req, res) => {
   try {
     const schedule = schedules.getById.get(req.params.id);
     if (!schedule) {
@@ -133,7 +133,7 @@ router.delete('/:id', (req, res) => {
 });
 
 // GET /api/schedules/validate - Validate cron expression
-router.get('/validate', (req, res) => {
+router.get('/schedules/validate', (req, res) => {
   const { cron } = req.query;
 
   if (!cron) {

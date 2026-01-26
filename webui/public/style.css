@@ -363,7 +363,7 @@ body {
 }
 
 .job-name-link {
-  color: var(--text-primary);
+  color: var(--info);
   text-decoration: none;
   cursor: pointer;
 }
