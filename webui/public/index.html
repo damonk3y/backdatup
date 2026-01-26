@@ -190,6 +190,26 @@
       </div>
     </div>
 
+    <!-- Inline Log Viewer -->
+    <div id="log-viewer" class="log-viewer hidden">
+      <div class="log-viewer-header">
+        <div class="log-viewer-info">
+          <button class="btn btn-sm" onclick="closeLogViewer()">&#8592; Back</button>
+          <h2 id="log-viewer-title">Run Logs</h2>
+          <span id="log-viewer-badge" class="status-badge-inline">...</span>
+          <span id="log-viewer-meta" class="log-viewer-meta"></span>
+        </div>
+        <div class="log-viewer-actions">
+          <button class="btn btn-sm" onclick="copyRawLogs()">Copy Raw Logs</button>
+          <button class="btn btn-sm" onclick="refreshInlineLogs()">Refresh</button>
+          <button id="log-cancel-btn" class="btn btn-sm btn-danger" style="display: none;" onclick="cancelInlineRun()">Cancel</button>
+        </div>
+      </div>
+      <div id="log-viewer-output" class="log-viewer-output">
+        <div class="loading">Loading logs...</div>
+      </div>
+    </div>
+
     <!-- Job Detail Modal -->
     <div id="job-detail-modal" class="modal hidden">
       <div class="modal-backdrop" onclick="closeJobDetailModal()"></div>

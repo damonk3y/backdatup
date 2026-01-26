@@ -880,6 +880,130 @@ body {
   }
 }
 
+/* Inline Log Viewer */
+.log-viewer {
+  padding: 0;
+}
+
+.log-viewer-header {
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+  gap: 16px;
+}
+
+.log-viewer-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.log-viewer-info h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.log-viewer-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.log-viewer-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.status-badge-inline {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.status-badge-inline.status-success {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--success);
+}
+
+.status-badge-inline.status-failed {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+}
+
+.status-badge-inline.status-running {
+  background: rgba(139, 92, 246, 0.1);
+  color: var(--running);
+}
+
+.log-viewer-output {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 16px 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  min-height: 300px;
+  color: var(--text-secondary);
+}
+
+/* ANSI Color classes */
+.ansi-black { color: #000000; }
+.ansi-red { color: #ff5555; }
+.ansi-green { color: #50fa7b; }
+.ansi-yellow { color: #f1fa8c; }
+.ansi-blue { color: #6272a4; }
+.ansi-magenta { color: #ff79c6; }
+.ansi-cyan { color: #8be9fd; }
+.ansi-white { color: #f8f8f2; }
+
+.ansi-bright-black { color: #6272a4; }
+.ansi-bright-red { color: #ff6e6e; }
+.ansi-bright-green { color: #69ff94; }
+.ansi-bright-yellow { color: #ffffa5; }
+.ansi-bright-blue { color: #d6acff; }
+.ansi-bright-magenta { color: #ff92df; }
+.ansi-bright-cyan { color: #a4ffff; }
+.ansi-bright-white { color: #ffffff; }
+
+.ansi-bg-black { background-color: #000000; }
+.ansi-bg-red { background-color: #ff5555; }
+.ansi-bg-green { background-color: #50fa7b; }
+.ansi-bg-yellow { background-color: #f1fa8c; }
+.ansi-bg-blue { background-color: #6272a4; }
+.ansi-bg-magenta { background-color: #ff79c6; }
+.ansi-bg-cyan { background-color: #8be9fd; }
+.ansi-bg-white { background-color: #f8f8f2; }
+
+.ansi-bold { font-weight: bold; }
+.ansi-dim { opacity: 0.7; }
+.ansi-italic { font-style: italic; }
+.ansi-underline { text-decoration: underline; }
+
+@media (max-width: 768px) {
+  .log-viewer-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .log-viewer-meta {
+    display: none;
+  }
+}
+
 /* Hidden utility */
 .hidden {
   display: none !important;

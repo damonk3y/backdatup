@@ -588,9 +588,194 @@ async function validateCron(e) {
   }
 }
 
-// Run output - opens in new tab
+// Inline log viewer
+let currentRunId = null;
+let logRefreshInterval = null;
+let rawLogOutput = '';
+
 function showRunOutput(runId) {
-  window.open(`/logs.html?id=${runId}`, '_blank');
+  currentRunId = runId;
+
+  // Close any open modals
+  document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
+
+  // Hide main content, show log viewer
+  document.querySelectorAll('.tabs, .tab-content').forEach(el => el.classList.add('hidden'));
+  document.getElementById('log-viewer').classList.remove('hidden');
+
+  loadInlineLogs();
+}
+
+function closeLogViewer() {
+  // Stop refresh
+  if (logRefreshInterval) {
+    clearInterval(logRefreshInterval);
+    logRefreshInterval = null;
+  }
+  currentRunId = null;
+  rawLogOutput = '';
+
+  // Hide log viewer
+  document.getElementById('log-viewer').classList.add('hidden');
+
+  // Restore main content
+  document.querySelector('.tabs').classList.remove('hidden');
+  const activeTab = document.querySelector('.tab.active')?.dataset.tab || 'activity';
+  document.querySelectorAll('.tab-content').forEach(el => {
+    el.classList.remove('hidden');
+    if (el.id === `tab-${activeTab}`) {
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  });
+}
+
+async function loadInlineLogs() {
+  if (!currentRunId) return;
+
+  try {
+    const res = await fetch(`/api/runs/${currentRunId}`);
+    if (!res.ok) throw new Error('Failed to load run');
+
+    const run = await res.json();
+    rawLogOutput = run.output || '';
+
+    // Update header
+    document.getElementById('log-viewer-title').textContent = `Run #${run.id} - ${run.job_name}`;
+
+    const badge = document.getElementById('log-viewer-badge');
+    badge.textContent = run.status;
+    badge.className = `status-badge-inline status-${run.status}`;
+
+    const startTime = new Date(run.started_at).toLocaleString();
+    const endTime = run.finished_at ? new Date(run.finished_at).toLocaleString() : 'In progress...';
+    document.getElementById('log-viewer-meta').textContent = `Started: ${startTime} | Ended: ${endTime}`;
+
+    // Show/hide cancel button
+    document.getElementById('log-cancel-btn').style.display = run.status === 'running' ? 'inline-flex' : 'none';
+
+    // Render logs
+    document.getElementById('log-viewer-output').innerHTML = ansiToHtml(run.output || 'No output yet...');
+
+    // Auto-refresh if running
+    if (run.status === 'running') {
+      if (!logRefreshInterval) {
+        logRefreshInterval = setInterval(loadInlineLogs, 2000);
+      }
+    } else {
+      if (logRefreshInterval) {
+        clearInterval(logRefreshInterval);
+        logRefreshInterval = null;
+      }
+    }
+  } catch (err) {
+    document.getElementById('log-viewer-output').innerHTML = `<div class="error" style="color: var(--error); padding: 40px; text-align: center;">Error: ${err.message}</div>`;
+  }
+}
+
+function refreshInlineLogs() {
+  loadInlineLogs();
+}
+
+async function cancelInlineRun() {
+  if (!confirm('Are you sure you want to cancel this run?')) return;
+
+  try {
+    const res = await fetch(`/api/runs/${currentRunId}/cancel`, { method: 'POST' });
+    if (res.ok) {
+      loadInlineLogs();
+    } else {
+      const err = await res.json();
+      alert('Failed to cancel: ' + err.error);
+    }
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+}
+
+function copyRawLogs() {
+  navigator.clipboard.writeText(rawLogOutput).then(() => {
+    const btn = event.target;
+    const original = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  }).catch(() => {
+    // Fallback for older browsers
+    const textarea = document.createElement('textarea');
+    textarea.value = rawLogOutput;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+
+    const btn = event.target;
+    const original = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
+}
+
+// ANSI to HTML converter
+function ansiToHtml(text) {
+  if (!text) return '';
+
+  const ansiColors = {
+    '30': 'ansi-black', '31': 'ansi-red', '32': 'ansi-green', '33': 'ansi-yellow',
+    '34': 'ansi-blue', '35': 'ansi-magenta', '36': 'ansi-cyan', '37': 'ansi-white',
+    '90': 'ansi-bright-black', '91': 'ansi-bright-red', '92': 'ansi-bright-green',
+    '93': 'ansi-bright-yellow', '94': 'ansi-bright-blue', '95': 'ansi-bright-magenta',
+    '96': 'ansi-bright-cyan', '97': 'ansi-bright-white',
+  };
+
+  const ansiBgColors = {
+    '40': 'ansi-bg-black', '41': 'ansi-bg-red', '42': 'ansi-bg-green', '43': 'ansi-bg-yellow',
+    '44': 'ansi-bg-blue', '45': 'ansi-bg-magenta', '46': 'ansi-bg-cyan', '47': 'ansi-bg-white',
+  };
+
+  const ansiStyles = {
+    '1': 'ansi-bold', '2': 'ansi-dim', '3': 'ansi-italic', '4': 'ansi-underline',
+  };
+
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  let currentClasses = [];
+
+  html = html.replace(/\x1b\[([0-9;]*)m/g, (match, codes) => {
+    if (!codes || codes === '0') {
+      const closeSpans = currentClasses.length > 0 ? '</span>' : '';
+      currentClasses = [];
+      return closeSpans;
+    }
+
+    const codeList = codes.split(';');
+    const newClasses = [];
+
+    for (const code of codeList) {
+      if (ansiColors[code]) newClasses.push(ansiColors[code]);
+      else if (ansiBgColors[code]) newClasses.push(ansiBgColors[code]);
+      else if (ansiStyles[code]) newClasses.push(ansiStyles[code]);
+    }
+
+    if (newClasses.length > 0) {
+      const closeSpans = currentClasses.length > 0 ? '</span>' : '';
+      currentClasses = newClasses;
+      return closeSpans + `<span class="${newClasses.join(' ')}">`;
+    }
+
+    return '';
+  });
+
+  if (currentClasses.length > 0) {
+    html += '</span>';
+  }
+
+  return html;
 }
 
 // Env vars
@@ -618,10 +803,14 @@ function closeScheduleModal() {
 
 // Close modals on backdrop click - handled by onclick on .modal-backdrop
 
-// Close modals on Escape key
+// Close modals or log viewer on Escape key
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
+    if (currentRunId) {
+      closeLogViewer();
+    } else {
+      document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
+    }
   }
 });
 
