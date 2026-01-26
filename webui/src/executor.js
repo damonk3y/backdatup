@@ -69,6 +69,8 @@ async function executeJob(job, scheduleId = null) {
         ...envVars,
         // Tell scripts to use this env file instead of .env
         BACKDATUP_ENV_FILE: tempEnvFile,
+        // Scope persist/cleanup to only handle this job's backup type
+        BACKUP_TYPE: job.job_type,
       },
       shell: true,
     };

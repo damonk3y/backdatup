@@ -21,10 +21,20 @@
       </div>
     </header>
 
-    <!-- Tabs -->
-    <nav class="tabs">
-      <button class="tab active" data-tab="activity">Activity</button>
-      <button class="tab" data-tab="jobs">Jobs</button>
+    <!-- Navigation -->
+    <nav class="nav-bar">
+      <div class="tabs" id="tabs-nav">
+        <button class="tab active" data-tab="activity">Activity</button>
+        <button class="tab" data-tab="jobs">Jobs</button>
+      </div>
+      <div class="breadcrumb hidden" id="breadcrumb">
+        <button class="breadcrumb-back" id="breadcrumb-back">
+          <span class="breadcrumb-arrow">&#8592;</span>
+          <span id="breadcrumb-parent"></span>
+        </button>
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-current" id="breadcrumb-current"></span>
+      </div>
     </nav>
 
     <!-- Activity Tab -->
@@ -194,7 +204,6 @@
     <div id="log-viewer" class="log-viewer hidden">
       <div class="log-viewer-header">
         <div class="log-viewer-info">
-          <button class="btn btn-sm" onclick="closeLogViewer()">&#8592; Back</button>
           <h2 id="log-viewer-title">Run Logs</h2>
           <span id="log-viewer-badge" class="status-badge-inline">...</span>
           <span id="log-viewer-meta" class="log-viewer-meta"></span>

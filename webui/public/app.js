@@ -33,18 +33,40 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Tab navigation
+let activeTab = 'activity';
+
 function initTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
-      const targetId = tab.dataset.tab;
-
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-      tab.classList.add('active');
-      document.getElementById(`tab-${targetId}`).classList.add('active');
+      switchToTab(tab.dataset.tab);
     });
   });
+
+  document.getElementById('breadcrumb-back').addEventListener('click', () => {
+    closeLogViewer();
+  });
+}
+
+function switchToTab(tabId) {
+  activeTab = tabId;
+
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+  document.querySelector(`.tab[data-tab="${tabId}"]`).classList.add('active');
+  document.getElementById(`tab-${tabId}`).classList.add('active');
+}
+
+function showBreadcrumb(parentLabel, currentLabel) {
+  document.getElementById('tabs-nav').classList.add('hidden');
+  document.getElementById('breadcrumb').classList.remove('hidden');
+  document.getElementById('breadcrumb-parent').textContent = parentLabel;
+  document.getElementById('breadcrumb-current').textContent = currentLabel;
+}
+
+function hideBreadcrumb() {
+  document.getElementById('breadcrumb').classList.add('hidden');
+  document.getElementById('tabs-nav').classList.remove('hidden');
 }
 
 // Polling for active runs
@@ -599,8 +621,14 @@ function showRunOutput(runId) {
   // Close any open modals
   document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
 
-  // Hide main content, show log viewer
-  document.querySelectorAll('.tabs, .tab-content').forEach(el => el.classList.add('hidden'));
+  // Find run info for breadcrumb
+  const run = allRuns.find(r => r.id === runId);
+  const parentLabel = activeTab === 'jobs' ? 'Jobs' : 'Activity';
+  const currentLabel = run ? `Run #${run.id} - ${run.job_name}` : `Run #${runId}`;
+
+  // Show breadcrumb, hide tab content, show log viewer
+  showBreadcrumb(parentLabel, currentLabel);
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('log-viewer').classList.remove('hidden');
 
   loadInlineLogs();
@@ -615,20 +643,10 @@ function closeLogViewer() {
   currentRunId = null;
   rawLogOutput = '';
 
-  // Hide log viewer
+  // Hide log viewer, restore breadcrumb to tabs, restore active tab
   document.getElementById('log-viewer').classList.add('hidden');
-
-  // Restore main content
-  document.querySelector('.tabs').classList.remove('hidden');
-  const activeTab = document.querySelector('.tab.active')?.dataset.tab || 'activity';
-  document.querySelectorAll('.tab-content').forEach(el => {
-    el.classList.remove('hidden');
-    if (el.id === `tab-${activeTab}`) {
-      el.classList.add('active');
-    } else {
-      el.classList.remove('active');
-    }
-  });
+  hideBreadcrumb();
+  switchToTab(activeTab);
 }
 
 async function loadInlineLogs() {

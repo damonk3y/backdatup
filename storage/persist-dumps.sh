@@ -42,6 +42,18 @@ MINIO_DUMP_DIR="$DUMP_DIR/minio"
 PSQL_DUMP_DIR="$DUMP_DIR/psql"
 TARGET_DIR="${RAID_PATH}/backthatup/$ENVIRONMENT"
 
+# BACKUP_TYPE scopes which files to persist: psql, minio, or full (default)
+BACKUP_TYPE="${BACKUP_TYPE:-full}"
+
+# When scoped to a specific type, only scan that subdirectory
+if [ "$BACKUP_TYPE" = "psql" ]; then
+    DUMP_DIR="$PSQL_DUMP_DIR"
+    TARGET_DIR="$TARGET_DIR/psql"
+elif [ "$BACKUP_TYPE" = "minio" ]; then
+    DUMP_DIR="$MINIO_DUMP_DIR"
+    TARGET_DIR="$TARGET_DIR/minio"
+fi
+
 if [ ! -d "$DUMP_DIR" ]; then
     echo -e "${RED}${BOLD}❌✗ Error:${NC} Dumps directory not found: ${CYAN}$DUMP_DIR${NC} 😱"
     exit 1
@@ -67,8 +79,6 @@ echo -e "🎯 ${BOLD}Target    :${NC} ${YELLOW}$TARGET_DIR${NC}"
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
 
 TOTAL_FILES=$(find "$DUMP_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
-MINIO_FILES=$(find "$MINIO_DUMP_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
-PSQL_FILES=$(find "$PSQL_DUMP_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
 
 if [ "$TOTAL_FILES" -eq 0 ]; then
     echo -e "\n${YELLOW}${BOLD}⚠️  Warning:${NC} No files found in ${CYAN}$DUMP_DIR${NC} 📭"
@@ -76,11 +86,19 @@ if [ "$TOTAL_FILES" -eq 0 ]; then
 fi
 
 echo -e "\n🔍 ${BOLD}Scanning for new files to persist...${NC}"
-if [ "$PSQL_FILES" -gt 0 ]; then
-    echo -e "   🐘 PostgreSQL dumps: ${YELLOW}${PSQL_FILES}${NC} files"
-fi
-if [ "$MINIO_FILES" -gt 0 ]; then
-    echo -e "   📦 MinIO backups: ${YELLOW}${MINIO_FILES}${NC} files"
+if [ "$BACKUP_TYPE" = "full" ]; then
+    PSQL_FILES=$(find "$PSQL_DUMP_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
+    MINIO_FILES=$(find "$MINIO_DUMP_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$PSQL_FILES" -gt 0 ]; then
+        echo -e "   🐘 PostgreSQL dumps: ${YELLOW}${PSQL_FILES}${NC} files"
+    fi
+    if [ "$MINIO_FILES" -gt 0 ]; then
+        echo -e "   📦 MinIO backups: ${YELLOW}${MINIO_FILES}${NC} files"
+    fi
+elif [ "$BACKUP_TYPE" = "psql" ]; then
+    echo -e "   🐘 PostgreSQL dumps: ${YELLOW}${TOTAL_FILES}${NC} files"
+elif [ "$BACKUP_TYPE" = "minio" ]; then
+    echo -e "   📦 MinIO backups: ${YELLOW}${TOTAL_FILES}${NC} files"
 fi
 echo ""
 
@@ -108,10 +126,10 @@ while IFS= read -r -d '' source_file; do
         COPIED=$((COPIED + 1))
         file_size=$(stat -f%z "$target_file" 2>/dev/null || stat -c%s "$target_file" 2>/dev/null || echo 0)
         TOTAL_SIZE_COPIED=$((TOTAL_SIZE_COPIED + file_size))
-        if [[ "$relative_path" == minio/* ]]; then
+        if [[ "$relative_path" == minio/* ]] || [[ "$BACKUP_TYPE" == "minio" ]]; then
             MINIO_COPIED=$((MINIO_COPIED + 1))
             icon="📦"
-        elif [[ "$relative_path" == psql/* ]]; then
+        elif [[ "$relative_path" == psql/* ]] || [[ "$BACKUP_TYPE" == "psql" ]]; then
             PSQL_COPIED=$((PSQL_COPIED + 1))
             icon="🐘"
         else

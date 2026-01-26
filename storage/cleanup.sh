@@ -41,6 +41,9 @@ BACKUP_ROOT="${RAID_PATH}/backthatup/$ENVIRONMENT"
 PSQL_TARGET_DIR="${BACKUP_ROOT}/psql"
 MINIO_TARGET_DIR="${BACKUP_ROOT}/minio"
 
+# BACKUP_TYPE scopes which backups to clean: psql, minio, or full (default)
+BACKUP_TYPE="${BACKUP_TYPE:-full}"
+
 if [ ! -d "$RAID_PATH" ]; then
     echo -e "${RED}${BOLD}❌✗ Error:${NC} RAID mount path not found: ${CYAN}$RAID_PATH${NC} 😱"
     exit 1
@@ -54,11 +57,11 @@ fi
 HAS_PSQL=false
 HAS_MINIO=false
 
-if [ -d "$PSQL_TARGET_DIR" ]; then
+if [ -d "$PSQL_TARGET_DIR" ] && [ "$BACKUP_TYPE" != "minio" ]; then
     HAS_PSQL=true
 fi
 
-if [ -d "$MINIO_TARGET_DIR" ]; then
+if [ -d "$MINIO_TARGET_DIR" ] && [ "$BACKUP_TYPE" != "psql" ]; then
     HAS_MINIO=true
 fi
 
@@ -323,12 +326,19 @@ else
 fi
 
 LOCAL_DUMPS_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT"
-if [ -d "$LOCAL_DUMPS_DIR" ]; then
+if [ "$BACKUP_TYPE" = "psql" ]; then
+    LOCAL_CLEANUP_DIR="$LOCAL_DUMPS_DIR/psql"
+elif [ "$BACKUP_TYPE" = "minio" ]; then
+    LOCAL_CLEANUP_DIR="$LOCAL_DUMPS_DIR/minio"
+else
+    LOCAL_CLEANUP_DIR="$LOCAL_DUMPS_DIR"
+fi
+if [ -d "$LOCAL_CLEANUP_DIR" ]; then
     echo -e "\n🧹 ${BOLD}Cleaning local dumps directory...${NC}"
-    if rm -rf "$LOCAL_DUMPS_DIR" 2>/dev/null; then
-        echo -e "   ${GREEN}✓${NC} Removed ${CYAN}$LOCAL_DUMPS_DIR${NC}"
+    if rm -rf "$LOCAL_CLEANUP_DIR" 2>/dev/null; then
+        echo -e "   ${GREEN}✓${NC} Removed ${CYAN}$LOCAL_CLEANUP_DIR${NC}"
     else
-        echo -e "   ${YELLOW}⚠️${NC} Failed to remove ${CYAN}$LOCAL_DUMPS_DIR${NC}"
+        echo -e "   ${YELLOW}⚠️${NC} Failed to remove ${CYAN}$LOCAL_CLEANUP_DIR${NC}"
     fi
 fi
 
