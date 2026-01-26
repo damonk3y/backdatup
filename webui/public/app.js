@@ -17,6 +17,8 @@ let jobs = [];
 let allRuns = [];
 let currentJobId = null;
 let pollInterval = null;
+let activityPage = 0;
+const ACTIVITY_PAGE_SIZE = 25;
 
 const ALL_STEPS = ['backup', 'persist', 'cleanup'];
 
@@ -116,6 +118,7 @@ async function loadData() {
     updateStats();
     renderActivityFeed();
     renderJobsTable();
+    renderJobsSuccessRate();
   } catch (err) {
     console.error('Load data error:', err);
   }
@@ -173,6 +176,7 @@ function updateStats() {
 // Render activity feed
 function renderActivityFeed() {
   const container = document.getElementById('activity-feed');
+  const pagination = document.getElementById('activity-pagination');
 
   if (allRuns.length === 0) {
     container.innerHTML = `
@@ -181,10 +185,18 @@ function renderActivityFeed() {
         <p>Run a backup job to see activity here.</p>
       </div>
     `;
+    pagination.classList.add('hidden');
     return;
   }
 
-  container.innerHTML = allRuns.slice(0, 20).map(run => {
+  const totalPages = Math.ceil(allRuns.length / ACTIVITY_PAGE_SIZE);
+  if (activityPage >= totalPages) activityPage = totalPages - 1;
+  if (activityPage < 0) activityPage = 0;
+
+  const start = activityPage * ACTIVITY_PAGE_SIZE;
+  const pageRuns = allRuns.slice(start, start + ACTIVITY_PAGE_SIZE);
+
+  container.innerHTML = pageRuns.map(run => {
     const icon = getStatusIcon(run.status);
     const duration = run.finished_at
       ? formatDuration(new Date(run.started_at), new Date(run.finished_at))
@@ -203,6 +215,31 @@ function renderActivityFeed() {
       </div>
     `;
   }).join('');
+
+  // Pagination controls
+  if (totalPages > 1) {
+    pagination.classList.remove('hidden');
+    document.getElementById('page-prev').disabled = activityPage === 0;
+    document.getElementById('page-next').disabled = activityPage >= totalPages - 1;
+    document.getElementById('page-info').textContent = `Page ${activityPage + 1} of ${totalPages}`;
+  } else {
+    pagination.classList.add('hidden');
+  }
+}
+
+function activityPagePrev() {
+  if (activityPage > 0) {
+    activityPage--;
+    renderActivityFeed();
+  }
+}
+
+function activityPageNext() {
+  const totalPages = Math.ceil(allRuns.length / ACTIVITY_PAGE_SIZE);
+  if (activityPage < totalPages - 1) {
+    activityPage++;
+    renderActivityFeed();
+  }
 }
 
 // Render jobs table
@@ -280,6 +317,28 @@ function renderJobsTable() {
       </tr>
     `;
   }).join('');
+}
+
+// Render combined success rate for last 20 runs on Jobs tab
+function renderJobsSuccessRate() {
+  const container = document.getElementById('jobs-success-summary');
+  const recent = allRuns.slice(0, 20);
+  const completed = recent.filter(r => r.status !== 'running');
+
+  if (completed.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const successCount = completed.filter(r => r.status === 'success').length;
+  const rate = Math.round((successCount / completed.length) * 100);
+  const rateClass = rate >= 90 ? 'good' : rate >= 70 ? 'warning' : 'bad';
+
+  container.innerHTML = `
+    <span class="success-summary-label">Last 20 runs</span>
+    <span class="success-summary-rate ${rateClass}">${rate}%</span>
+    <span class="success-summary-detail">${successCount}/${completed.length} succeeded</span>
+  `;
 }
 
 // Show job detail modal

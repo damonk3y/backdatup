@@ -67,6 +67,11 @@
         <div id="activity-feed" class="activity-feed">
           <div class="loading">Loading activity...</div>
         </div>
+        <div id="activity-pagination" class="pagination hidden">
+          <button class="btn btn-sm" id="page-prev" onclick="activityPagePrev()">Previous</button>
+          <span class="pagination-info" id="page-info"></span>
+          <button class="btn btn-sm" id="page-next" onclick="activityPageNext()">Next</button>
+        </div>
       </section>
     </main>
 
@@ -76,6 +81,8 @@
         <h2>Backup Jobs</h2>
         <button id="btn-new-job" class="btn btn-primary">+ New Job</button>
       </div>
+
+      <div id="jobs-success-summary" class="jobs-success-summary"></div>
 
       <div id="jobs-table-container">
         <table class="jobs-table" id="jobs-table">
