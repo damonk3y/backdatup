@@ -69,6 +69,12 @@ if [ ! -w "$RAID_PATH" ]; then
     exit 1
 fi
 
+PROBE_FILE="$RAID_PATH/.write_probe_$$"
+if ! touch "$PROBE_FILE" 2>/dev/null || ! rm -f "$PROBE_FILE" 2>/dev/null; then
+    echo -e "${RED}${BOLD}❌✗ Error:${NC} RAID mount path failed write probe: ${CYAN}$RAID_PATH${NC} (mount may be stale or read-only) 😱"
+    exit 1
+fi
+
 mkdir -p "$TARGET_DIR"
 
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
@@ -122,7 +128,7 @@ while IFS= read -r -d '' source_file; do
         fi
     fi
     mkdir -p "$target_dir"
-    if cp "$source_file" "$target_file" 2>/dev/null; then
+    if cp_err=$(cp "$source_file" "$target_file" 2>&1); then
         COPIED=$((COPIED + 1))
         file_size=$(stat -f%z "$target_file" 2>/dev/null || stat -c%s "$target_file" 2>/dev/null || echo 0)
         TOTAL_SIZE_COPIED=$((TOTAL_SIZE_COPIED + file_size))
@@ -140,7 +146,7 @@ while IFS= read -r -d '' source_file; do
         fi
     else
         FAILED=$((FAILED + 1))
-        echo -e "   ${RED}✗${NC} Failed to copy ${CYAN}${relative_path}${NC}"
+        echo -e "   ${RED}✗${NC} Failed to copy ${CYAN}${relative_path}${NC}: ${cp_err}"
     fi
 done < <(find "$DUMP_DIR" -type f -print0 2>/dev/null)
 
