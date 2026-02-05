@@ -35,7 +35,7 @@ if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "prod" ]]; then
     exit 1
 fi
 
-DUMP_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT/psql"
+DUMP_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT/psql/$POSTGRES_DB"
 mkdir -p "$DUMP_DIR"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")

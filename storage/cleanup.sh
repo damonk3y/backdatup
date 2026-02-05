@@ -327,11 +327,22 @@ fi
 
 LOCAL_DUMPS_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT"
 if [ "$BACKUP_TYPE" = "psql" ]; then
-    LOCAL_CLEANUP_DIR="$LOCAL_DUMPS_DIR/psql"
+    # Scope to specific database directory for job isolation
+    if [ -n "$POSTGRES_DB" ]; then
+        LOCAL_CLEANUP_DIR="$LOCAL_DUMPS_DIR/psql/$POSTGRES_DB"
+    else
+        LOCAL_CLEANUP_DIR="$LOCAL_DUMPS_DIR/psql"
+    fi
 elif [ "$BACKUP_TYPE" = "minio" ]; then
     LOCAL_CLEANUP_DIR="$LOCAL_DUMPS_DIR/minio"
 else
-    LOCAL_CLEANUP_DIR="$LOCAL_DUMPS_DIR"
+    # Full mode: clean database-scoped psql dir + minio dir
+    if [ -n "$POSTGRES_DB" ]; then
+        LOCAL_CLEANUP_DIR="$LOCAL_DUMPS_DIR/psql/$POSTGRES_DB"
+    else
+        LOCAL_CLEANUP_DIR="$LOCAL_DUMPS_DIR/psql"
+    fi
+    MINIO_CLEANUP_DIR="$LOCAL_DUMPS_DIR/minio"
 fi
 if [ -d "$LOCAL_CLEANUP_DIR" ]; then
     echo -e "\n🧹 ${BOLD}Cleaning local dumps directory...${NC}"
@@ -339,6 +350,13 @@ if [ -d "$LOCAL_CLEANUP_DIR" ]; then
         echo -e "   ${GREEN}✓${NC} Removed ${CYAN}$LOCAL_CLEANUP_DIR${NC}"
     else
         echo -e "   ${YELLOW}⚠️${NC} Failed to remove ${CYAN}$LOCAL_CLEANUP_DIR${NC}"
+    fi
+fi
+if [ -n "$MINIO_CLEANUP_DIR" ] && [ -d "$MINIO_CLEANUP_DIR" ]; then
+    if rm -rf "$MINIO_CLEANUP_DIR" 2>/dev/null; then
+        echo -e "   ${GREEN}✓${NC} Removed ${CYAN}$MINIO_CLEANUP_DIR${NC}"
+    else
+        echo -e "   ${YELLOW}⚠️${NC} Failed to remove ${CYAN}$MINIO_CLEANUP_DIR${NC}"
     fi
 fi
 

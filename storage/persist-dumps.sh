@@ -37,27 +37,21 @@ if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "prod" ]]; then
     exit 1
 fi
 
-DUMP_DIR="$PROJECT_ROOT/dumps/$ENVIRONMENT"
-MINIO_DUMP_DIR="$DUMP_DIR/minio"
-PSQL_DUMP_DIR="$DUMP_DIR/psql"
-TARGET_DIR="${RAID_PATH}/backthatup/$ENVIRONMENT"
-
 # BACKUP_TYPE scopes which files to persist: psql, minio, or full (default)
 BACKUP_TYPE="${BACKUP_TYPE:-full}"
 
-# When scoped to a specific type, only scan that subdirectory
-if [ "$BACKUP_TYPE" = "psql" ]; then
-    DUMP_DIR="$PSQL_DUMP_DIR"
-    TARGET_DIR="$TARGET_DIR/psql"
-elif [ "$BACKUP_TYPE" = "minio" ]; then
-    DUMP_DIR="$MINIO_DUMP_DIR"
-    TARGET_DIR="$TARGET_DIR/minio"
-fi
+DUMP_BASE="$PROJECT_ROOT/dumps/$ENVIRONMENT"
+RAID_BASE="${RAID_PATH}/backthatup/$ENVIRONMENT"
 
-if [ ! -d "$DUMP_DIR" ]; then
-    echo -e "${RED}${BOLD}❌✗ Error:${NC} Dumps directory not found: ${CYAN}$DUMP_DIR${NC} 😱"
-    exit 1
+# Scope psql source to specific database for job isolation
+if [ -n "$POSTGRES_DB" ]; then
+    PSQL_DUMP_DIR="$DUMP_BASE/psql/$POSTGRES_DB"
+else
+    PSQL_DUMP_DIR="$DUMP_BASE/psql"
 fi
+MINIO_DUMP_DIR="$DUMP_BASE/minio"
+PSQL_TARGET_DIR="$RAID_BASE/psql"
+MINIO_TARGET_DIR="$RAID_BASE/minio"
 
 if [ ! -d "$RAID_PATH" ]; then
     echo -e "${RED}${BOLD}❌✗ Error:${NC} RAID mount path not found: ${CYAN}$RAID_PATH${NC} 😱"
@@ -75,38 +69,55 @@ if ! touch "$PROBE_FILE" 2>/dev/null || ! rm -f "$PROBE_FILE" 2>/dev/null; then
     exit 1
 fi
 
-mkdir -p "$TARGET_DIR"
+# Determine which types to process
+PROCESS_PSQL=false
+PROCESS_MINIO=false
+
+if [ "$BACKUP_TYPE" = "psql" ]; then
+    PROCESS_PSQL=true
+elif [ "$BACKUP_TYPE" = "minio" ]; then
+    PROCESS_MINIO=true
+else
+    # full mode
+    PROCESS_PSQL=true
+    PROCESS_MINIO=true
+fi
+
+# Check source directories exist
+HAS_PSQL_FILES=false
+HAS_MINIO_FILES=false
+
+if [ "$PROCESS_PSQL" = true ] && [ -d "$PSQL_DUMP_DIR" ]; then
+    PSQL_FILE_COUNT=$(find "$PSQL_DUMP_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$PSQL_FILE_COUNT" -gt 0 ]; then
+        HAS_PSQL_FILES=true
+    fi
+fi
+
+if [ "$PROCESS_MINIO" = true ] && [ -d "$MINIO_DUMP_DIR" ]; then
+    MINIO_FILE_COUNT=$(find "$MINIO_DUMP_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$MINIO_FILE_COUNT" -gt 0 ]; then
+        HAS_MINIO_FILES=true
+    fi
+fi
+
+if [ "$HAS_PSQL_FILES" = false ] && [ "$HAS_MINIO_FILES" = false ]; then
+    echo -e "\n${YELLOW}${BOLD}⚠️  Warning:${NC} No files found to persist 📭"
+    exit 0
+fi
 
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
 echo -e "💾 ${BOLD}Starting Dump Persistence to RAID${NC} 🗄️\n"
 echo -e "🏷️  ${BOLD}Environment:${NC} ${YELLOW}$ENVIRONMENT${NC}"
-echo -e "📂 ${BOLD}Source    :${NC} ${YELLOW}$DUMP_DIR${NC}"
-echo -e "🎯 ${BOLD}Target    :${NC} ${YELLOW}$TARGET_DIR${NC}"
+if [ "$HAS_PSQL_FILES" = true ]; then
+    echo -e "🐘 ${BOLD}PostgreSQL :${NC} ${YELLOW}$PSQL_DUMP_DIR${NC} → ${YELLOW}$PSQL_TARGET_DIR${NC}"
+    echo -e "   ${BOLD}Files      :${NC} ${YELLOW}${PSQL_FILE_COUNT}${NC}"
+fi
+if [ "$HAS_MINIO_FILES" = true ]; then
+    echo -e "📦 ${BOLD}MinIO      :${NC} ${YELLOW}$MINIO_DUMP_DIR${NC} → ${YELLOW}$MINIO_TARGET_DIR${NC}"
+    echo -e "   ${BOLD}Files      :${NC} ${YELLOW}${MINIO_FILE_COUNT}${NC}"
+fi
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
-
-TOTAL_FILES=$(find "$DUMP_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
-
-if [ "$TOTAL_FILES" -eq 0 ]; then
-    echo -e "\n${YELLOW}${BOLD}⚠️  Warning:${NC} No files found in ${CYAN}$DUMP_DIR${NC} 📭"
-    exit 0
-fi
-
-echo -e "\n🔍 ${BOLD}Scanning for new files to persist...${NC}"
-if [ "$BACKUP_TYPE" = "full" ]; then
-    PSQL_FILES=$(find "$PSQL_DUMP_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
-    MINIO_FILES=$(find "$MINIO_DUMP_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$PSQL_FILES" -gt 0 ]; then
-        echo -e "   🐘 PostgreSQL dumps: ${YELLOW}${PSQL_FILES}${NC} files"
-    fi
-    if [ "$MINIO_FILES" -gt 0 ]; then
-        echo -e "   📦 MinIO backups: ${YELLOW}${MINIO_FILES}${NC} files"
-    fi
-elif [ "$BACKUP_TYPE" = "psql" ]; then
-    echo -e "   🐘 PostgreSQL dumps: ${YELLOW}${TOTAL_FILES}${NC} files"
-elif [ "$BACKUP_TYPE" = "minio" ]; then
-    echo -e "   📦 MinIO backups: ${YELLOW}${TOTAL_FILES}${NC} files"
-fi
-echo ""
 
 COPIED=0
 SKIPPED=0
@@ -115,40 +126,67 @@ TOTAL_SIZE_COPIED=0
 MINIO_COPIED=0
 PSQL_COPIED=0
 
-while IFS= read -r -d '' source_file; do
-    relative_path="${source_file#$DUMP_DIR/}"
-    target_file="$TARGET_DIR/$relative_path"
-    target_dir=$(dirname "$target_file")
-    if [ -f "$target_file" ]; then
-        source_size=$(stat -f%z "$source_file" 2>/dev/null || stat -c%s "$source_file" 2>/dev/null || echo 0)
-        target_size=$(stat -f%z "$target_file" 2>/dev/null || stat -c%s "$target_file" 2>/dev/null || echo 0)
-        if [ "$source_size" -eq "$target_size" ]; then
-            SKIPPED=$((SKIPPED + 1))
-            continue
-        fi
-    fi
+# Persist files from a source directory to a target directory
+# Args: $1=source_dir $2=target_dir $3=type_label ("psql" or "minio")
+persist_files() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local type_label="$3"
+
     mkdir -p "$target_dir"
-    if cp_err=$(cp "$source_file" "$target_file" 2>&1); then
-        COPIED=$((COPIED + 1))
-        file_size=$(stat -f%z "$target_file" 2>/dev/null || stat -c%s "$target_file" 2>/dev/null || echo 0)
-        TOTAL_SIZE_COPIED=$((TOTAL_SIZE_COPIED + file_size))
-        if [[ "$relative_path" == minio/* ]] || [[ "$BACKUP_TYPE" == "minio" ]]; then
-            MINIO_COPIED=$((MINIO_COPIED + 1))
-            icon="📦"
-        elif [[ "$relative_path" == psql/* ]] || [[ "$BACKUP_TYPE" == "psql" ]]; then
-            PSQL_COPIED=$((PSQL_COPIED + 1))
-            icon="🐘"
+
+    while IFS= read -r -d '' source_file; do
+        local relative_path="${source_file#$source_dir/}"
+        local target_file="$target_dir/$relative_path"
+        local target_file_dir
+        target_file_dir=$(dirname "$target_file")
+
+        if [ -f "$target_file" ]; then
+            local source_size
+            source_size=$(stat -f%z "$source_file" 2>/dev/null || stat -c%s "$source_file" 2>/dev/null || echo 0)
+            local target_size
+            target_size=$(stat -f%z "$target_file" 2>/dev/null || stat -c%s "$target_file" 2>/dev/null || echo 0)
+            if [ "$source_size" -eq "$target_size" ]; then
+                SKIPPED=$((SKIPPED + 1))
+                continue
+            fi
+        fi
+
+        mkdir -p "$target_file_dir"
+
+        if cp_err=$(cp "$source_file" "$target_file" 2>&1); then
+            COPIED=$((COPIED + 1))
+            local file_size
+            file_size=$(stat -f%z "$target_file" 2>/dev/null || stat -c%s "$target_file" 2>/dev/null || echo 0)
+            TOTAL_SIZE_COPIED=$((TOTAL_SIZE_COPIED + file_size))
+
+            if [ "$type_label" = "minio" ]; then
+                MINIO_COPIED=$((MINIO_COPIED + 1))
+                local icon="📦"
+            else
+                PSQL_COPIED=$((PSQL_COPIED + 1))
+                local icon="🐘"
+            fi
+
+            if [ "$COPIED" -eq 1 ] || [ $((COPIED % 10)) -eq 0 ]; then
+                echo -e "${icon} ${BOLD}Copied${NC} ${CYAN}${relative_path}${NC}"
+            fi
         else
-            icon="📋"
+            FAILED=$((FAILED + 1))
+            echo -e "   ${RED}✗${NC} Failed to copy ${CYAN}${relative_path}${NC}: ${cp_err}"
         fi
-        if [ "$COPIED" -eq 1 ] || [ $((COPIED % 10)) -eq 0 ]; then
-            echo -e "${icon} ${BOLD}Copied${NC} ${CYAN}${relative_path}${NC}"
-        fi
-    else
-        FAILED=$((FAILED + 1))
-        echo -e "   ${RED}✗${NC} Failed to copy ${CYAN}${relative_path}${NC}: ${cp_err}"
-    fi
-done < <(find "$DUMP_DIR" -type f -print0 2>/dev/null)
+    done < <(find "$source_dir" -type f -print0 2>/dev/null)
+}
+
+echo -e "\n🔍 ${BOLD}Persisting files...${NC}\n"
+
+if [ "$HAS_PSQL_FILES" = true ]; then
+    persist_files "$PSQL_DUMP_DIR" "$PSQL_TARGET_DIR" "psql"
+fi
+
+if [ "$HAS_MINIO_FILES" = true ]; then
+    persist_files "$MINIO_DUMP_DIR" "$MINIO_TARGET_DIR" "minio"
+fi
 
 if [ "$TOTAL_SIZE_COPIED" -gt 1073741824 ]; then
     GB_SIZE=$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE_COPIED / 1073741824}")
@@ -165,7 +203,6 @@ fi
 
 echo -e "\n${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}"
 if [ "$FAILED" -eq 0 ]; then
-    TOTAL_SIZE=$(du -sh "$TARGET_DIR" | cut -f1)
     echo -e "${GREEN}${BOLD}✅✓ Persistence completed successfully! 🎉${NC}"
     echo -e "📊 ${BOLD}Files Copied :${NC} ${YELLOW}${COPIED}${NC}"
     if [ "$PSQL_COPIED" -gt 0 ]; then
@@ -180,7 +217,6 @@ if [ "$FAILED" -eq 0 ]; then
     if [ "$COPIED" -gt 0 ]; then
         echo -e "📏 ${BOLD}Size Copied  :${NC} ${YELLOW}${SIZE_FORMATTED}${NC}"
     fi
-    echo -e "💾 ${BOLD}Total in RAID:${NC} ${YELLOW}${TOTAL_SIZE}${NC}"
     echo -e "${CYAN}${BOLD}══════════════════════════════════════════════════════${NC}\n"
 else
     echo -e "${YELLOW}${BOLD}⚠️  Persistence completed with warnings${NC}"
