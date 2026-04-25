@@ -17,6 +17,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - BACKDATUP_MASTER_KEY=${BACKDATUP_MASTER_KEY}
     restart: unless-stopped
 
 volumes:

@@ -102,20 +102,43 @@ function describeCron(expression) {
   if (parts.length < 5) return expression;
 
   const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+  const restIsAny = dayOfMonth === '*' && month === '*' && dayOfWeek === '*';
+  const isInt = (s) => /^\d+$/.test(s);
+  const stepOf = (s) => {
+    const m = s.match(/^\*\/(\d+)$/);
+    return m ? parseInt(m[1], 10) : null;
+  };
 
-  if (minute === '*' && hour === '*') {
-    return 'Every minute';
+  const minuteStep = stepOf(minute);
+  const hourStep = stepOf(hour);
+
+  if (minute === '*' && hour === '*') return 'Every minute';
+
+  if (minuteStep !== null && hour === '*') {
+    return minuteStep === 1 ? 'Every minute' : `Every ${minuteStep} minutes`;
   }
 
-  if (hour === '*') {
-    return `Every hour at minute ${minute}`;
+  if (hourStep !== null && isInt(minute) && restIsAny) {
+    const m = parseInt(minute, 10);
+    const suffix = m === 0 ? '' : ` at :${minute.padStart(2, '0')}`;
+    return hourStep === 1 ? `Every hour${suffix}` : `Every ${hourStep} hours${suffix}`;
   }
 
-  if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+  if (hour === '*' && isInt(minute)) {
+    return `Every hour at :${minute.padStart(2, '0')}`;
+  }
+
+  // Comma-separated specific hours, e.g. "0,6,12,18"
+  if (/^\d+(,\d+)+$/.test(hour) && isInt(minute) && restIsAny) {
+    const hours = hour.split(',').map(h => h.padStart(2, '0')).join(', ');
+    return `Daily at ${hours}:${minute.padStart(2, '0')}`;
+  }
+
+  if (isInt(minute) && isInt(hour) && restIsAny) {
     return `Daily at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
   }
 
-  if (dayOfWeek !== '*') {
+  if (dayOfWeek !== '*' && isInt(dayOfWeek) && isInt(hour) && isInt(minute)) {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayName = days[parseInt(dayOfWeek)] || dayOfWeek;
     return `${dayName} at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;

@@ -5,7 +5,8 @@
   "main": "src/server.js",
   "scripts": {
     "start": "bun run src/server.js",
-    "dev": "bun --watch src/server.js"
+    "dev": "bun --watch src/server.js",
+    "gen-master-key": "bun run src/scripts/gen-master-key.js"
   },
   "dependencies": {
     "express": "^4.21.0",

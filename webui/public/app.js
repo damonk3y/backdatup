@@ -15,10 +15,13 @@ async function api(endpoint, options = {}) {
 // State
 let jobs = [];
 let allRuns = [];
+let sshEndpoints = [];
 let currentJobId = null;
+let currentEndpointId = null;
 let pollInterval = null;
 let activityPage = 0;
 const ACTIVITY_PAGE_SIZE = 25;
+const VALID_TABS = ['activity', 'jobs', 'ssh-endpoints'];
 
 const ALL_STEPS = ['backup', 'persist', 'cleanup'];
 
@@ -32,6 +35,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('job-form').addEventListener('submit', saveJob);
   document.getElementById('schedule-form').addEventListener('submit', saveSchedule);
   document.getElementById('cron-expression').addEventListener('input', validateCron);
+  document.getElementById('btn-new-endpoint').addEventListener('click', openNewEndpointModal);
+  document.getElementById('endpoint-form').addEventListener('submit', saveEndpoint);
 });
 
 // Tab navigation
@@ -47,7 +52,7 @@ function initTabs() {
   // Restore tab from URL query param
   const params = new URLSearchParams(window.location.search);
   const tab = params.get('tab');
-  if (tab && (tab === 'activity' || tab === 'jobs')) {
+  if (tab && VALID_TABS.includes(tab)) {
     switchToTab(tab);
   }
 
@@ -114,11 +119,13 @@ function updateActiveIndicator(active) {
 async function loadData() {
   try {
     jobs = await api('/jobs');
+    sshEndpoints = await api('/ssh-endpoints');
     await loadAllRuns();
     updateStats();
     renderActivityFeed();
     renderJobsTable();
     renderJobsSuccessRate();
+    renderSshEndpointsTable();
   } catch (err) {
     console.error('Load data error:', err);
   }
@@ -445,18 +452,21 @@ function closeJobDetailModal() {
 }
 
 // Job CRUD
-function openNewJobModal() {
+async function openNewJobModal() {
   currentJobId = null;
   document.getElementById('modal-title').textContent = 'New Job';
   document.getElementById('job-form').reset();
   document.getElementById('job-id').value = '';
+  document.getElementById('job-type').value = 'psql';
 
   // Reset steps to all checked
   setStepsCheckboxes(ALL_STEPS);
 
+  await populateSshEndpointDropdown(null);
+
   // Add default env vars
   const container = document.getElementById('env-vars-container');
-  container.innerHTML = '';
+  container.replaceChildren();
 
   const defaultVars = [
     'RAID_PATH',
@@ -466,9 +476,6 @@ function openNewJobModal() {
     'POSTGRES_HOST',
     'POSTGRES_PORT',
     'POSTGRES_DB',
-    'MINIO_ENDPOINT',
-    'MINIO_ACCESS_KEY',
-    'MINIO_SECRET_KEY',
   ];
 
   defaultVars.forEach(key => addEnvVar(key, ''));
@@ -485,13 +492,22 @@ async function editJob(jobId) {
     document.getElementById('job-id').value = job.id;
     document.getElementById('job-name').value = job.name;
     document.getElementById('job-description').value = job.description || '';
-    document.getElementById('job-type').value = job.job_type;
+
+    // Job type select only has 'psql' now; legacy values stay in DB but the select can't represent them.
+    const jobTypeSelect = document.getElementById('job-type');
+    if ([...jobTypeSelect.options].some(o => o.value === job.job_type)) {
+      jobTypeSelect.value = job.job_type;
+    } else {
+      jobTypeSelect.value = 'psql';
+    }
+
+    await populateSshEndpointDropdown(job.ssh_endpoint_id);
 
     // Set steps checkboxes
     setStepsCheckboxes(job.steps || ALL_STEPS);
 
     const container = document.getElementById('env-vars-container');
-    container.innerHTML = '';
+    container.replaceChildren();
 
     Object.entries(job.env_vars).forEach(([key, value]) => {
       addEnvVar(key, value);
@@ -530,12 +546,15 @@ async function saveJob(e) {
     return;
   }
 
+  const sshEndpointVal = document.getElementById('job-ssh-endpoint').value;
+
   const data = {
     name: name,
     description: document.getElementById('job-description').value.trim(),
     job_type: document.getElementById('job-type').value,
     steps: steps,
     env_vars: envVars,
+    ssh_endpoint_id: sshEndpointVal ? parseInt(sshEndpointVal, 10) : null,
   };
 
   try {
@@ -884,6 +903,356 @@ function addEnvVar(key = '', value = '') {
     <button type="button" class="btn-remove" onclick="this.parentElement.remove()">&times;</button>
   `;
   container.appendChild(row);
+}
+
+// SSH Endpoints
+async function populateSshEndpointDropdown(selectedId) {
+  const select = document.getElementById('job-ssh-endpoint');
+
+  // Always refresh from the API so we don't render a stale list when the modal
+  // is opened before the initial loadData() resolves, or after the user adds an
+  // endpoint in another tab.
+  try {
+    sshEndpoints = await api('/ssh-endpoints');
+  } catch (err) {
+    console.error('Failed to refresh SSH endpoints:', err);
+  }
+
+  select.replaceChildren();
+
+  const noneOpt = document.createElement('option');
+  noneOpt.value = '';
+  noneOpt.textContent = 'None (direct connection)';
+  select.appendChild(noneOpt);
+
+  for (const ep of sshEndpoints) {
+    const opt = document.createElement('option');
+    opt.value = String(ep.id);
+    opt.textContent = ep.name;
+    if (selectedId && Number(selectedId) === ep.id) {
+      opt.selected = true;
+    }
+    select.appendChild(opt);
+  }
+}
+
+function renderSshEndpointsTable() {
+  const tbody = document.getElementById('ssh-endpoints-tbody');
+  if (!tbody) return;
+  tbody.replaceChildren();
+
+  if (sshEndpoints.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 5;
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const h = document.createElement('h3');
+    h.textContent = 'No SSH endpoints configured';
+    const p = document.createElement('p');
+    p.textContent = 'Add an endpoint to tunnel jobs through a bastion host.';
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary';
+    btn.textContent = '+ New Endpoint';
+    btn.addEventListener('click', openNewEndpointModal);
+    empty.appendChild(h);
+    empty.appendChild(p);
+    empty.appendChild(btn);
+    td.appendChild(empty);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  for (const ep of sshEndpoints) {
+    const tr = document.createElement('tr');
+
+    const tdName = document.createElement('td');
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'job-name';
+    nameSpan.textContent = ep.name;
+    tdName.appendChild(nameSpan);
+    if (ep.description) {
+      const desc = document.createElement('div');
+      desc.className = 'schedule-desc';
+      desc.textContent = ep.description;
+      tdName.appendChild(desc);
+    }
+    tr.appendChild(tdName);
+
+    const tdHost = document.createElement('td');
+    tdHost.textContent = `${ep.host}:${ep.port}`;
+    tr.appendChild(tdHost);
+
+    const tdUser = document.createElement('td');
+    tdUser.textContent = ep.username;
+    tr.appendChild(tdUser);
+
+    const tdTest = document.createElement('td');
+    const stack = document.createElement('div');
+    stack.style.display = 'flex';
+    stack.style.flexDirection = 'column';
+    stack.style.alignItems = 'flex-start';
+    stack.style.gap = '4px';
+    const status = ep.last_test_status || 'untested';
+    const badge = document.createElement('span');
+    badge.className = `status-badge-inline status-${status === 'ok' ? 'success' : status === 'fail' ? 'failed' : 'pending'}`;
+    badge.textContent = status === 'ok' ? '✓ ok' : status === 'fail' ? '✗ failed' : '— untested';
+    stack.appendChild(badge);
+    if (ep.last_tested_at) {
+      const time = document.createElement('span');
+      time.style.fontSize = '0.8125rem';
+      time.style.color = 'var(--text-muted)';
+      time.textContent = formatRelativeTime(ep.last_tested_at);
+      stack.appendChild(time);
+    }
+    tdTest.appendChild(stack);
+    tr.appendChild(tdTest);
+
+    const tdActions = document.createElement('td');
+    const actions = document.createElement('div');
+    actions.className = 'job-actions';
+
+    const testBtn = document.createElement('button');
+    testBtn.className = 'btn btn-sm';
+    testBtn.textContent = 'Test';
+    testBtn.addEventListener('click', () => testEndpoint(ep.id));
+    actions.appendChild(testBtn);
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-sm';
+    editBtn.textContent = 'Edit';
+    editBtn.addEventListener('click', () => editEndpoint(ep.id));
+    actions.appendChild(editBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-sm btn-danger';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', () => deleteEndpoint(ep.id));
+    actions.appendChild(delBtn);
+
+    tdActions.appendChild(actions);
+    tr.appendChild(tdActions);
+    tbody.appendChild(tr);
+  }
+}
+
+function openNewEndpointModal() {
+  currentEndpointId = null;
+  document.getElementById('endpoint-modal-title').textContent = 'New SSH Endpoint';
+  document.getElementById('endpoint-form').reset();
+  document.getElementById('endpoint-id').value = '';
+  document.getElementById('endpoint-port').value = '22';
+  document.getElementById('endpoint-private-key').placeholder = '-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----';
+  document.getElementById('endpoint-key-hint').textContent = 'Paste the full private key including BEGIN/END lines.';
+  document.getElementById('endpoint-passphrase').value = '';
+  document.getElementById('endpoint-passphrase').placeholder = 'Leave blank if the key is unencrypted';
+  document.getElementById('endpoint-passphrase-hint').textContent = 'Required only if your private key is passphrase-protected. Stored encrypted with the master key.';
+  document.getElementById('endpoint-clear-passphrase-group').style.display = 'none';
+  document.getElementById('endpoint-clear-passphrase').checked = false;
+  document.getElementById('endpoint-test-result').textContent = '';
+  document.getElementById('btn-test-endpoint').style.display = 'none';
+  document.getElementById('btn-show-public-key').style.display = 'none';
+  document.getElementById('endpoint-public-key-block').style.display = 'none';
+  document.getElementById('endpoint-public-key-content').textContent = '';
+  document.getElementById('endpoint-modal').classList.remove('hidden');
+}
+
+async function editEndpoint(endpointId) {
+  try {
+    const ep = await api(`/ssh-endpoints/${endpointId}`);
+    currentEndpointId = endpointId;
+    document.getElementById('endpoint-modal-title').textContent = 'Edit SSH Endpoint';
+    document.getElementById('endpoint-id').value = ep.id;
+    document.getElementById('endpoint-name').value = ep.name;
+    document.getElementById('endpoint-description').value = ep.description || '';
+    document.getElementById('endpoint-host').value = ep.host;
+    document.getElementById('endpoint-port').value = ep.port;
+    document.getElementById('endpoint-username').value = ep.username;
+    document.getElementById('endpoint-private-key').value = '';
+    document.getElementById('endpoint-private-key').placeholder = 'Leave blank to keep existing key';
+    document.getElementById('endpoint-key-hint').textContent = 'Leave blank to keep existing key. Replacing the key will invalidate the saved host fingerprint — re-test after saving.';
+    document.getElementById('endpoint-passphrase').value = '';
+    document.getElementById('endpoint-passphrase').placeholder = ep.has_passphrase
+      ? 'Leave blank to keep existing passphrase'
+      : 'Leave blank if the key is unencrypted';
+    document.getElementById('endpoint-passphrase-hint').textContent = ep.has_passphrase
+      ? 'A passphrase is currently saved. Leave blank to keep it, type a new one to replace, or check the box below to remove it.'
+      : 'Required only if your private key is passphrase-protected. Stored encrypted with the master key.';
+    document.getElementById('endpoint-clear-passphrase-group').style.display = ep.has_passphrase ? 'block' : 'none';
+    document.getElementById('endpoint-clear-passphrase').checked = false;
+    document.getElementById('endpoint-test-result').textContent = '';
+    document.getElementById('btn-test-endpoint').style.display = 'inline-flex';
+    document.getElementById('btn-show-public-key').style.display = 'inline-flex';
+    document.getElementById('endpoint-public-key-block').style.display = 'none';
+    document.getElementById('endpoint-public-key-content').textContent = '';
+    document.getElementById('endpoint-modal').classList.remove('hidden');
+  } catch (err) {
+    alert('Error loading endpoint: ' + err.message);
+  }
+}
+
+async function showPublicKey() {
+  if (!currentEndpointId) return;
+  const block = document.getElementById('endpoint-public-key-block');
+  const content = document.getElementById('endpoint-public-key-content');
+  content.textContent = 'Deriving...';
+  block.style.display = 'block';
+  try {
+    const result = await api(`/ssh-endpoints/${currentEndpointId}/public-key`);
+    content.textContent = result.authorized_keys_line || result.public_key;
+  } catch (err) {
+    content.textContent = 'Failed: ' + err.message;
+  }
+}
+
+function copyPublicKey() {
+  const content = document.getElementById('endpoint-public-key-content').textContent;
+  if (!content) return;
+  const btn = document.querySelector('[onclick="copyPublicKey()"]');
+  const original = btn ? btn.textContent : '';
+  const flash = () => {
+    if (btn) {
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(content).then(flash).catch(() => fallback());
+  } else {
+    fallback();
+  }
+  function fallback() {
+    const ta = document.createElement('textarea');
+    ta.value = content;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    flash();
+  }
+}
+
+async function saveEndpoint(e) {
+  e.preventDefault();
+
+  const passphrase = document.getElementById('endpoint-passphrase').value;
+  const clearPassphrase = document.getElementById('endpoint-clear-passphrase').checked;
+
+  const data = {
+    name: document.getElementById('endpoint-name').value.trim(),
+    description: document.getElementById('endpoint-description').value.trim(),
+    host: document.getElementById('endpoint-host').value.trim(),
+    port: parseInt(document.getElementById('endpoint-port').value, 10),
+    username: document.getElementById('endpoint-username').value.trim(),
+    private_key: document.getElementById('endpoint-private-key').value,
+    passphrase,
+    clear_passphrase: clearPassphrase,
+  };
+
+  if (!data.name || !data.host || !data.username) {
+    alert('Name, host, and username are required');
+    return;
+  }
+  if (!currentEndpointId && !data.private_key.trim()) {
+    alert('Private key is required for new endpoints');
+    return;
+  }
+  if (clearPassphrase && passphrase.length > 0) {
+    alert("Either type a new passphrase or check 'Remove existing passphrase' — not both.");
+    return;
+  }
+
+  try {
+    if (currentEndpointId) {
+      // PUT — only send key/passphrase if provided
+      const payload = { ...data };
+      if (!payload.private_key.trim()) delete payload.private_key;
+      if (!payload.clear_passphrase && payload.passphrase.length === 0) delete payload.passphrase;
+      if (!payload.clear_passphrase) delete payload.clear_passphrase;
+      await api(`/ssh-endpoints/${currentEndpointId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+    } else {
+      const payload = { ...data };
+      delete payload.clear_passphrase;
+      if (payload.passphrase.length === 0) delete payload.passphrase;
+      await api('/ssh-endpoints', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    }
+    closeEndpointModal();
+    loadData();
+  } catch (err) {
+    alert('Error saving endpoint: ' + err.message);
+  }
+}
+
+async function deleteEndpoint(endpointId) {
+  if (!confirm('Delete this SSH endpoint? Jobs referencing it will lose the tunnel and need to be reconfigured.')) return;
+  try {
+    await api(`/ssh-endpoints/${endpointId}`, { method: 'DELETE' });
+    loadData();
+  } catch (err) {
+    alert('Error deleting endpoint: ' + err.message);
+  }
+}
+
+// Extract a short fingerprint summary from the captured known_hosts file content.
+// Returns something like 'ecdsa-sha2-nistp256 AAAAE2VjZHNh...' truncated for display.
+function summarizeKnownHosts(knownHosts) {
+  if (!knownHosts) return '';
+  const line = knownHosts.split('\n').find(l => l.trim() && !l.startsWith('#'));
+  if (!line) return '';
+  const parts = line.trim().split(/\s+/);
+  if (parts.length < 3) return line.trim().slice(0, 80);
+  const [, type, key] = parts;
+  return `${type} ${key.slice(0, 24)}…${key.slice(-8)}`;
+}
+
+async function testEndpoint(endpointId) {
+  try {
+    const result = await api(`/ssh-endpoints/${endpointId}/test`, { method: 'POST' });
+    if (result.status === 'ok') {
+      const fp = summarizeKnownHosts(result.known_hosts);
+      alert('✓ Connection successful.\n\nCaptured host key:\n' + (fp || '(none)') + '\n\nVerify this matches the bastion you intended to reach before running tunneled jobs against it.');
+    } else {
+      alert('✗ Connection failed:\n\n' + (result.error || 'Unknown error'));
+    }
+    loadData();
+  } catch (err) {
+    alert('Error testing endpoint: ' + err.message);
+  }
+}
+
+async function testEndpointFromModal() {
+  if (!currentEndpointId) return;
+  const resultDiv = document.getElementById('endpoint-test-result');
+  resultDiv.textContent = 'Testing...';
+  resultDiv.style.color = '';
+  try {
+    const result = await api(`/ssh-endpoints/${currentEndpointId}/test`, { method: 'POST' });
+    if (result.status === 'ok') {
+      const fp = summarizeKnownHosts(result.known_hosts);
+      resultDiv.textContent = `✓ Connection successful. Host key: ${fp || '(none)'} — verify this matches the bastion before relying on it.`;
+      resultDiv.style.color = 'var(--success)';
+    } else {
+      resultDiv.textContent = '✗ ' + (result.error || 'Connection failed');
+      resultDiv.style.color = 'var(--error)';
+    }
+  } catch (err) {
+    resultDiv.textContent = '✗ ' + err.message;
+    resultDiv.style.color = 'var(--error)';
+  }
+}
+
+function closeEndpointModal() {
+  document.getElementById('endpoint-modal').classList.add('hidden');
+  currentEndpointId = null;
 }
 
 // Modal helpers

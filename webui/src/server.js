@@ -4,6 +4,7 @@ const path = require('path');
 const jobsRouter = require('./routes/jobs');
 const runsRouter = require('./routes/runs');
 const schedulesRouter = require('./routes/schedules');
+const sshEndpointsRouter = require('./routes/ssh-endpoints');
 const scheduler = require('./scheduler');
 
 const app = express();
@@ -27,6 +28,7 @@ app.use((req, res, next) => {
 app.use('/api/jobs', jobsRouter);
 app.use('/api', runsRouter);  // Mounts /jobs/:id/run and /runs/* routes
 app.use('/api', schedulesRouter);
+app.use('/api/ssh-endpoints', sshEndpointsRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -76,7 +76,7 @@ router.get('/:id', (req, res) => {
 // POST /api/jobs - Create job
 router.post('/', (req, res) => {
   try {
-    const { name, description, job_type, steps, env_vars } = req.body;
+    const { name, description, job_type, steps, env_vars, ssh_endpoint_id } = req.body;
 
     if (!name || !env_vars) {
       return res.status(400).json({ error: 'Name and env_vars are required' });
@@ -93,6 +93,7 @@ router.post('/', (req, res) => {
       job_type: job_type || 'full',
       steps: JSON.stringify(validSteps),
       env_vars: JSON.stringify(env_vars),
+      ssh_endpoint_id: ssh_endpoint_id || null,
     });
 
     const newJob = jobs.getById.get(result.lastInsertRowid);
@@ -113,7 +114,7 @@ router.put('/:id', (req, res) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    const { name, description, job_type, steps, env_vars } = req.body;
+    const { name, description, job_type, steps, env_vars, ssh_endpoint_id } = req.body;
 
     // Validate steps if provided
     let stepsJson = job.steps;
@@ -131,6 +132,7 @@ router.put('/:id', (req, res) => {
       job_type: job_type || job.job_type,
       steps: stepsJson,
       env_vars: env_vars ? JSON.stringify(env_vars) : job.env_vars,
+      ssh_endpoint_id: ssh_endpoint_id !== undefined ? (ssh_endpoint_id || null) : job.ssh_endpoint_id,
     });
 
     const updatedJob = jobs.getById.get(req.params.id);

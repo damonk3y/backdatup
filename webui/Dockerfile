@@ -1,7 +1,7 @@
 FROM oven/bun:1-alpine
 
 # Install PostgreSQL client and MinIO client (multi-arch)
-RUN apk add --no-cache postgresql-client bash curl make \
+RUN apk add --no-cache postgresql-client bash curl make openssh-client \
     && ARCH=$(uname -m) \
     && case "$ARCH" in \
         x86_64) MC_ARCH="amd64" ;; \

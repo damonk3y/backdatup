@@ -26,6 +26,7 @@
       <div class="tabs" id="tabs-nav">
         <button class="tab active" data-tab="activity">Activity</button>
         <button class="tab" data-tab="jobs">Jobs</button>
+        <button class="tab" data-tab="ssh-endpoints">SSH Endpoints</button>
       </div>
       <div class="breadcrumb hidden" id="breadcrumb">
         <button class="breadcrumb-back" id="breadcrumb-back">
@@ -103,6 +104,31 @@
       </div>
     </main>
 
+    <!-- SSH Endpoints Tab -->
+    <main id="tab-ssh-endpoints" class="tab-content">
+      <div class="section-header">
+        <h2>SSH Endpoints</h2>
+        <button id="btn-new-endpoint" class="btn btn-primary">+ New Endpoint</button>
+      </div>
+
+      <div id="ssh-endpoints-table-container">
+        <table class="jobs-table" id="ssh-endpoints-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Host</th>
+              <th>User</th>
+              <th>Last Test</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="ssh-endpoints-tbody">
+            <tr><td colspan="5" class="loading">Loading endpoints...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+
     <!-- Job Modal -->
     <div id="job-modal" class="modal hidden">
       <div class="modal-backdrop" onclick="closeModal()"></div>
@@ -128,10 +154,15 @@
             <div class="form-group">
               <label for="job-type">Type</label>
               <select id="job-type">
-                <option value="full">Full (PostgreSQL + MinIO)</option>
-                <option value="psql">PostgreSQL Only</option>
-                <option value="minio">MinIO Only</option>
+                <option value="psql">PostgreSQL</option>
               </select>
+            </div>
+            <div class="form-group">
+              <label for="job-ssh-endpoint">SSH Tunnel</label>
+              <select id="job-ssh-endpoint">
+                <option value="">None (direct connection)</option>
+              </select>
+              <small class="form-hint">When set, POSTGRES_HOST/PORT must be the addresses reachable from the bastion.</small>
             </div>
           </div>
 
@@ -202,6 +233,80 @@
           <div class="modal-footer">
             <button type="button" class="btn" onclick="closeScheduleModal()">Cancel</button>
             <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- SSH Endpoint Modal -->
+    <div id="endpoint-modal" class="modal hidden">
+      <div class="modal-backdrop" onclick="closeEndpointModal()"></div>
+      <div class="modal-panel">
+        <div class="modal-header">
+          <h3 id="endpoint-modal-title">New SSH Endpoint</h3>
+          <button class="btn-close" onclick="closeEndpointModal()">&times;</button>
+        </div>
+        <form id="endpoint-form" class="modal-body">
+          <input type="hidden" id="endpoint-id">
+
+          <div class="form-group">
+            <label for="endpoint-name">Name</label>
+            <input type="text" id="endpoint-name" required placeholder="hetzner-prod-bastion">
+          </div>
+
+          <div class="form-group">
+            <label for="endpoint-description">Description</label>
+            <input type="text" id="endpoint-description" placeholder="Optional">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="endpoint-host">Host</label>
+              <input type="text" id="endpoint-host" required placeholder="bastion.hetzner.cloud">
+            </div>
+            <div class="form-group">
+              <label for="endpoint-port">Port</label>
+              <input type="number" id="endpoint-port" required value="22" min="1" max="65535">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="endpoint-username">Username</label>
+            <input type="text" id="endpoint-username" required placeholder="root">
+          </div>
+
+          <div class="form-group">
+            <label for="endpoint-private-key">Private Key (PEM)</label>
+            <textarea id="endpoint-private-key" rows="8" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+            <small id="endpoint-key-hint" class="form-hint">Paste the full private key including BEGIN/END lines.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="endpoint-passphrase">Passphrase</label>
+            <input type="password" id="endpoint-passphrase" autocomplete="new-password" placeholder="Leave blank if the key is unencrypted">
+            <small id="endpoint-passphrase-hint" class="form-hint">Required only if your private key is passphrase-protected. Stored encrypted with the master key.</small>
+          </div>
+
+          <div class="form-group" id="endpoint-clear-passphrase-group" style="display:none;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="endpoint-clear-passphrase">
+              <span>Remove the existing passphrase from this endpoint</span>
+            </label>
+          </div>
+
+          <div id="endpoint-test-result" class="form-hint"></div>
+
+          <div id="endpoint-public-key-block" style="display:none; margin-top: 12px;">
+            <label style="display:block; font-size: 0.875rem; color: var(--text-muted); margin-bottom: 4px;">Public key (paste this line into <code>authorized_keys</code> on the bastion):</label>
+            <pre id="endpoint-public-key-content" style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; font-size: 0.8125rem; white-space: pre-wrap; word-break: break-all; margin: 0;"></pre>
+            <button type="button" class="btn btn-sm" style="margin-top: 6px;" onclick="copyPublicKey()">Copy</button>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeEndpointModal()">Cancel</button>
+            <button type="button" id="btn-show-public-key" class="btn" onclick="showPublicKey()" style="display:none;">Show Public Key</button>
+            <button type="button" id="btn-test-endpoint" class="btn" onclick="testEndpointFromModal()" style="display:none;">Test Connection</button>
+            <button type="submit" class="btn btn-primary">Save Endpoint</button>
           </div>
         </form>
       </div>
