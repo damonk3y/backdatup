@@ -27,3 +27,6 @@ Thumbs.db
 # AI / agent tool local data (reviews, settings, session artifacts)
 .claude/
 .Codex/
+
+# One-off generated artifacts
+restore-ffm-guide.html
