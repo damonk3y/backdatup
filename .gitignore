@@ -23,3 +23,7 @@ Thumbs.db
 
 # Docker
 .docker/
+
+# AI / agent tool local data (reviews, settings, session artifacts)
+.claude/
+.Codex/
