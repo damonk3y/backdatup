@@ -89,71 +89,76 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* Navigation Bar */
+/* Navigation Bar — stable primary navigation */
 .nav-bar {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+/* Tabs — always visible primary navigation (hallmark: clear, stable, no hiding) */
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 14px 0 10px;
   border-bottom: 1px solid var(--border);
 }
 
-/* Tabs */
-.tabs {
-  display: flex;
-  gap: 4px;
-  padding: 16px 0;
-}
-
 .tab {
-  padding: 8px 16px;
+  padding: 8px 18px;
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-bottom: 3px solid transparent;
   color: var(--text-secondary);
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.1s ease;
+  position: relative;
 }
 
 .tab:hover {
   color: var(--text-primary);
-  background: var(--bg-tertiary);
 }
 
 .tab.active {
   color: var(--text-primary);
-  background: var(--bg-tertiary);
+  border-bottom-color: var(--success);
 }
 
-/* Breadcrumb */
+/* Breadcrumb — secondary context line (shown when viewing a run log).
+   Tabs stay visible above so the user is never "lost" in the app structure. */
 .breadcrumb {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 0;
+  gap: 10px;
+  padding: 8px 0;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
 }
 
 .breadcrumb-back {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  background: transparent;
+  padding: 5px 12px;
+  background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.1s ease;
 }
 
 .breadcrumb-back:hover {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   border-color: var(--border-light);
 }
 
 .breadcrumb-arrow {
   font-size: 0.875rem;
+  color: var(--text-muted);
 }
 
 .breadcrumb-sep {
@@ -168,6 +173,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 420px;
 }
 
 /* Tab Content */
@@ -927,6 +933,199 @@ body {
 
 .run-row:hover {
   background: var(--bg-hover);
+}
+
+/* Backups list (job-scoped, grouped, searchable) */
+.backups-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.backups-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.backups-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.backups-scope {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.backups-search {
+  width: 220px;
+  max-width: 100%;
+  font-size: 0.8125rem;
+  padding: 6px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+}
+.backups-search:focus {
+  outline: none;
+  border-color: var(--border-light);
+}
+
+.backups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.backups-group-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 4px 0 2px;
+}
+.backup-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.backup-group-head {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  padding: 2px 4px 1px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* Row — clearer hierarchy than flat endless list */
+.backup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  transition: background 0.1s ease;
+}
+.backup-row:hover {
+  background: var(--bg-hover);
+}
+.backup-row .backup-icon {
+  flex: 0 0 auto;
+  font-size: 0.95rem;
+  opacity: 0.9;
+}
+.backup-row .backup-name {
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  word-break: break-all;
+  min-width: 0;
+  line-height: 1.25;
+}
+.backup-row .backup-time,
+.backup-row .backup-size {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.backup-row .backup-time {
+  min-width: 118px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.backup-row .backup-size {
+  min-width: 58px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.backup-row .backup-download {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  padding: 3px 9px;
+}
+
+/* Empty / footnote */
+.backups-empty {
+  padding: 14px 10px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+.backups-footnote {
+  margin-top: 8px;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+/* Dedicated wider Backups Browser modal */
+.backups-modal .modal-panel {
+  max-width: 920px;
+}
+
+.backups-modal-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.backups-modal-body {
+  padding-top: 12px;
+}
+
+.backups-browser-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.backups-browser-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.backups-browser-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 240px;
+}
+
+.backups-browser-actions .backups-search {
+  flex: 1;
+  max-width: 320px;
+}
+
+.backups-browser-list {
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.backups-browser-list .backups-list {
+  padding: 8px;
+}
+
+.backups-browser-list .backup-row {
+  padding: 8px 12px;
 }
 
 .run-status {

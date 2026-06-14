@@ -1,6 +1,7 @@
 const express = require('express');
 const { jobs, schedules, runs } = require('../db');
 const scheduler = require('../scheduler');
+const { listBackups, streamBackupDownload } = require('../backups');
 
 const router = express.Router();
 
@@ -49,6 +50,27 @@ router.get('/', (req, res) => {
     res.json(enrichedJobs);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/jobs/:id/backups - List available backups on RAID for this job's env
+router.get('/:id/backups', async (req, res) => {
+  try {
+    const data = await listBackups(req.params.id);
+    res.json(data);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// GET /api/jobs/:id/backups/:name/download - Stream a backup (directory → on-the-fly tar.gz)
+router.get('/:id/backups/:name/download', async (req, res) => {
+  try {
+    await streamBackupDownload(req.params.id, req.params.name, res, req);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(err.status || 500).json({ error: err.message });
+    }
   }
 });
 

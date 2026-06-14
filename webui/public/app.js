@@ -37,55 +37,145 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('cron-expression').addEventListener('input', validateCron);
   document.getElementById('btn-new-endpoint').addEventListener('click', openNewEndpointModal);
   document.getElementById('endpoint-form').addEventListener('submit', saveEndpoint);
+
+  // Event delegation for download buttons in the backups browser (robust, no inline onclick)
+  const browserList = document.getElementById('backups-browser-list');
+  if (browserList) {
+    browserList.addEventListener('click', (e) => {
+      const btn = e.target.closest('.backup-download');
+      if (btn) {
+        e.stopImmediatePropagation();
+        const jid = parseInt(btn.dataset.jobId, 10);
+        const backupName = btn.dataset.backupName;
+        if (jid && backupName) {
+          downloadBackup(jid, backupName);
+        }
+      }
+    });
+  }
+
+  // Wire the browser search input (removed inline oninput for consistency with delegation pattern)
+  const browserSearch = document.getElementById('backups-browser-search');
+  if (browserSearch) {
+    browserSearch.addEventListener('input', (e) => {
+      onBackupsBrowserSearch(e.target.value);
+    });
+  }
+
+  // Delegation for the "Backups" action buttons (table + job detail) — consistent with download fix
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.js-open-backups');
+    if (btn) {
+      e.stopImmediatePropagation();
+      const jid = parseInt(btn.dataset.jobId, 10);
+      if (jid) {
+        // Close any open job detail modal first so we don't stack
+        const detailModal = document.getElementById('job-detail-modal');
+        if (detailModal) detailModal.classList.add('hidden');
+        openBackupsBrowser(jid);
+      }
+    }
+  });
 });
 
-// Tab navigation
+// Tab navigation + history-aware routing
 let activeTab = 'activity';
 
 function initTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
-      switchToTab(tab.dataset.tab);
+      navigateToTab(tab.dataset.tab);
     });
   });
 
-  // Restore tab from URL query param
-  const params = new URLSearchParams(window.location.search);
-  const tab = params.get('tab');
-  if (tab && VALID_TABS.includes(tab)) {
-    switchToTab(tab);
-  }
+  // History support: browser back/forward now works for tabs and run logs
+  window.addEventListener('popstate', syncRouteFromURL);
+
+  // Initial route restore (supports ?tab=jobs and ?tab=activity&run=123)
+  syncRouteFromURL();
 
   document.getElementById('breadcrumb-back').addEventListener('click', () => {
     closeLogViewer();
   });
 }
 
-function switchToTab(tabId) {
-  activeTab = tabId;
+// User-initiated tab switch: push history entry so back/forward works
+function navigateToTab(tabId) {
+  if (!VALID_TABS.includes(tabId)) return;
 
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-  document.querySelector(`.tab[data-tab="${tabId}"]`).classList.add('active');
-  document.getElementById(`tab-${tabId}`).classList.add('active');
-
-  // Persist tab in URL
   const url = new URL(window.location);
   url.searchParams.set('tab', tabId);
-  history.replaceState(null, '', url);
+  url.searchParams.delete('run'); // leaving the current tab context clears any open run log
+  history.pushState(null, '', url);
+
+  syncRouteFromURL();
+}
+
+// Applies whatever the current URL says (tab + optional run).
+// This is the single source of truth for main navigation state.
+function syncRouteFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const tab = params.get('tab') || 'activity';
+  const runIdParam = params.get('run');
+
+  if (VALID_TABS.includes(tab)) {
+    activeTab = tab;
+
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+    const tabBtn = document.querySelector(`.tab[data-tab="${tab}"]`);
+    const tabContent = document.getElementById(`tab-${tab}`);
+    if (tabBtn) tabBtn.classList.add('active');
+    if (tabContent) tabContent.classList.add('active');
+  }
+
+  const runId = runIdParam ? parseInt(runIdParam, 10) : null;
+
+  if (runId) {
+    // Show the log viewer on top of the current tab
+    showLogViewerChrome();
+
+    // Placeholder until we fetch the real run data
+    document.getElementById('breadcrumb-parent').textContent = activeTab === 'jobs' ? 'Jobs' : 'Activity';
+    document.getElementById('breadcrumb-current').textContent = `Run #${runId}`;
+
+    currentRunId = runId;
+    loadInlineLogs();
+  } else {
+    hideLogViewerChrome();
+    currentRunId = null;
+  }
+}
+
+function showLogViewerChrome() {
+  // Primary navigation (tabs) stays visible at all times — this is the key UX fix.
+  // The breadcrumb now acts as a secondary context line under the tabs.
+  document.getElementById('breadcrumb').classList.remove('hidden');
+
+  // Hide the main tab content area so the log viewer can take focus
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('log-viewer').classList.remove('hidden');
+}
+
+function hideLogViewerChrome() {
+  document.getElementById('log-viewer').classList.add('hidden');
+  document.getElementById('breadcrumb').classList.add('hidden');
+
+  // Restore the currently active tab's content
+  const activeContent = document.getElementById(`tab-${activeTab}`);
+  if (activeContent) activeContent.classList.add('active');
 }
 
 function showBreadcrumb(parentLabel, currentLabel) {
-  document.getElementById('tabs-nav').classList.add('hidden');
-  document.getElementById('breadcrumb').classList.remove('hidden');
+  // Kept for compatibility with existing showRunOutput calls that pass labels
   document.getElementById('breadcrumb-parent').textContent = parentLabel;
   document.getElementById('breadcrumb-current').textContent = currentLabel;
 }
 
-function hideBreadcrumb() {
-  document.getElementById('breadcrumb').classList.add('hidden');
-  document.getElementById('tabs-nav').classList.remove('hidden');
+// Legacy name kept for minimal diff — now just cleans the run param via history
+function switchToTab(tabId) {
+  navigateToTab(tabId);
 }
 
 // Polling for active runs
@@ -317,6 +407,7 @@ function renderJobsTable() {
             <button class="btn btn-sm btn-success" onclick="runJob(${job.id})" ${isRunning ? 'disabled' : ''}>
               ${isRunning ? '...' : 'Run'}
             </button>
+            <button class="btn btn-sm js-open-backups" data-job-id="${job.id}">Backups</button>
             <button class="btn btn-sm" onclick="editJob(${job.id})">Edit</button>
             <button class="btn btn-sm btn-danger" onclick="deleteJob(${job.id})">Delete</button>
           </div>
@@ -435,6 +526,16 @@ async function showJobDetail(jobId) {
         }
       </div>
 
+      <div class="job-detail-section">
+        <h4>Backups on RAID</h4>
+        <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 10px;">
+          Persisted backups scoped to this job (filtered by its POSTGRES_DB / environment).
+        </p>
+        <button class="btn js-open-backups" data-job-id="${job.id}">
+          Browse backups on RAID →
+        </button>
+      </div>
+
       <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
         <button class="btn btn-success" onclick="closeJobDetailModal(); runJob(${job.id})">Run Now</button>
         <button class="btn" onclick="closeJobDetailModal(); editJob(${job.id})">Edit Job</button>
@@ -449,6 +550,324 @@ async function showJobDetail(jobId) {
 
 function closeJobDetailModal() {
   document.getElementById('job-detail-modal').classList.add('hidden');
+
+  // Defensive: if a log viewer was somehow left in a weird state, make sure the current tab content is visible
+  if (document.getElementById('log-viewer').classList.contains('hidden') === false) {
+    // only restore if no run param (i.e. we didn't intend to be in a log)
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get('run')) {
+      hideLogViewerChrome();
+    }
+  }
+}
+
+function downloadBackup(jobId, name) {
+  if (!name || !jobId) return;
+  const url = `/api/jobs/${jobId}/backups/${encodeURIComponent(name)}/download`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name.endsWith('.tar.gz') ? name : `${name}.tar.gz`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => document.body.removeChild(a), 0);
+}
+
+// Shared client-side state for the dedicated backups browser
+let backupsSearchTerm = '';
+let currentBackupsData = { psql: [], minio: [] };
+
+function renderBackupRow(jobId, b) {
+  const niceTime = parseBackupTime(b.name) || new Date(b.mtime).toLocaleString();
+  const niceSize = formatBytes(b.size);
+  const icon = b.type === 'psql' ? '🐘' : '📦';
+  // Use data attributes + event delegation/attachment instead of fragile inline onclick
+  // (prevents quoting issues with backup names in generated HTML)
+  return `
+    <div class="backup-row">
+      <span class="backup-icon">${icon}</span>
+      <span class="backup-name">${escapeHtml(b.name)}</span>
+      <span class="backup-time">${niceTime}</span>
+      <span class="backup-size">${niceSize}</span>
+      <button class="btn btn-sm backup-download" data-job-id="${jobId}" data-backup-name="${escapeHtml(b.name)}">Download</button>
+    </div>
+  `;
+}
+
+function groupBackups(items) {
+  if (!items || items.length === 0) return [];
+  const groups = {};
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const yesterday = new Date(now.getTime() - 86400000).toISOString().slice(0, 10);
+
+  for (const b of items) {
+    const d = new Date(b.mtime);
+    const key = d.toISOString().slice(0, 10);
+    let label = key;
+    if (key === today) label = 'Today';
+    else if (key === yesterday) label = 'Yesterday';
+    else label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+    if (!groups[label]) groups[label] = [];
+    groups[label].push(b);
+  }
+
+  // Order: Today, Yesterday, then chronological remaining
+  const ordered = [];
+  if (groups['Today']) ordered.push({ label: 'Today', items: groups['Today'] });
+  if (groups['Yesterday']) ordered.push({ label: 'Yesterday', items: groups['Yesterday'] });
+
+  const otherKeys = Object.keys(groups).filter(k => k !== 'Today' && k !== 'Yesterday')
+    .sort((a, b) => new Date(b) - new Date(a)); // newest first among older
+
+  for (const k of otherKeys) {
+    ordered.push({ label: k, items: groups[k] });
+  }
+  return ordered;
+}
+
+function renderFilteredBackups(jobId, data) {
+  const container = document.getElementById('job-backups-list');
+  if (!container) return;
+
+  const term = (backupsSearchTerm || '').toLowerCase().trim();
+  let psql = data.psql || [];
+  let minio = data.minio || [];
+
+  if (term) {
+    psql = psql.filter(b => b.name.toLowerCase().includes(term));
+    minio = minio.filter(b => b.name.toLowerCase().includes(term));
+  }
+
+  const total = psql.length + minio.length;
+  const scopeLabel = data.psql_prefix ? `for ${escapeHtml(data.psql_prefix)}` : '';
+
+  let html = `
+    <div class="backups-controls">
+      <div class="backups-meta">
+        <span class="backups-count">${total} backup${total === 1 ? '' : 's'}</span>
+        ${scopeLabel ? `<span class="backups-scope">${scopeLabel}</span>` : ''}
+      </div>
+      <input type="search" class="backups-search" placeholder="Filter by name…" value="${escapeHtml(backupsSearchTerm)}" oninput="onBackupsSearchInput(${jobId}, this.value)">
+    </div>
+  `;
+
+  if (total === 0) {
+    const emptyMsg = term
+      ? 'No matching backups for this job.'
+      : (data.psql_prefix
+          ? `No backups found for <strong>${escapeHtml(data.psql_prefix)}</strong> on this RAID_PATH + ENVIRONMENT.<br>Make sure the job has run "persist" at least once.`
+          : 'No backups found on RAID for this job\'s configuration.<br>Make sure you have run "persist" at least once.');
+    html += `<div class="backups-empty">${emptyMsg}</div>`;
+    container.innerHTML = html;
+    return;
+  }
+
+  html += '<div class="backups-list">';
+
+  if (psql.length > 0) {
+    html += `<div class="backups-group-label">PostgreSQL ${scopeLabel ? '· ' + escapeHtml(data.psql_prefix) : ''}</div>`;
+    const groups = groupBackups(psql);
+    for (const g of groups) {
+      html += `<div class="backup-group"><div class="backup-group-head">${g.label}</div>`;
+      html += g.items.map(b => renderBackupRow(jobId, b)).join('');
+      html += `</div>`;
+    }
+  }
+
+  if (minio.length > 0) {
+    html += `<div class="backups-group-label" style="margin-top:10px;">MinIO</div>`;
+    const groups = groupBackups(minio);
+    for (const g of groups) {
+      html += `<div class="backup-group"><div class="backup-group-head">${g.label}</div>`;
+      html += g.items.map(b => renderBackupRow(jobId, b)).join('');
+      html += `</div>`;
+    }
+  }
+
+  html += '</div>';
+  html += `<div class="backups-footnote">Files are streamed directly from RAID_PATH. Large PostgreSQL dumps are tar-gzipped on the fly.</div>`;
+
+  container.innerHTML = html;
+}
+
+function onBackupsSearchInput(jobId, value) {
+  backupsSearchTerm = value || '';
+  currentBackupsJobId = jobId;
+  // Re-render using the last fetched data (no extra request)
+  renderFilteredBackups(jobId, currentBackupsData);
+}
+
+async function loadJobBackups(jobId) {
+  const container = document.getElementById('job-backups-list');
+  if (!container) return;
+
+  backupsSearchTerm = ''; // reset search when explicitly refreshing
+  currentBackupsJobId = jobId;
+  container.innerHTML = '<div class="loading">Loading backups from RAID...</div>';
+
+  try {
+    const data = await api(`/jobs/${jobId}/backups`);
+    currentBackupsData = { psql: data.psql || [], minio: data.minio || [] };
+    renderFilteredBackups(jobId, data);
+  } catch (err) {
+    container.innerHTML = `
+      <p style="color: var(--error); font-size: 0.875rem;">Failed to list backups: ${escapeHtml(err.message)}</p>
+      <button class="btn btn-sm" onclick="loadJobBackups(${jobId})">Retry</button>
+    `;
+  }
+}
+
+// ============================================
+// Dedicated Backups Browser (separate modal)
+// ============================================
+
+let backupsBrowserJobId = null;
+
+async function openBackupsBrowser(jobId) {
+  try {
+    // Close other modals + any open log viewer (don't want to leave the user in a sub-state)
+    document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
+    hideLogViewerChrome();
+    currentRunId = null;
+
+    // Also clean the run param from URL so a refresh doesn't bring back the log
+    const url = new URL(window.location);
+    url.searchParams.delete('run');
+    history.replaceState(null, '', url);
+
+    backupsSearchTerm = '';
+    backupsBrowserJobId = jobId;
+
+    const titleEl = document.getElementById('backups-modal-title');
+    const subtitleEl = document.getElementById('backups-modal-subtitle');
+    const listEl = document.getElementById('backups-browser-list');
+    const searchEl = document.getElementById('backups-browser-search');
+    const countEl = document.getElementById('backups-browser-count');
+
+    titleEl.textContent = 'Backups on RAID';
+    subtitleEl.textContent = '';
+    countEl.textContent = '';
+    listEl.innerHTML = '<div class="loading">Loading backups from RAID...</div>';
+    if (searchEl) searchEl.value = '';
+
+    document.getElementById('backups-modal').classList.remove('hidden');
+
+    const data = await api(`/jobs/${jobId}/backups`);
+    currentBackupsData = { psql: data.psql || [], minio: data.minio || [] };
+
+    // Populate header from the list response (already includes job_name, psql_prefix, environment)
+    titleEl.textContent = `Backups — ${data.job_name || 'Job ' + jobId}`;
+
+    const env = data.environment || '';
+    const prefix = data.psql_prefix ? ` · ${data.psql_prefix}` : '';
+    subtitleEl.textContent = env ? `Environment: ${env}${prefix}` : (prefix ? prefix.slice(2) : '');
+
+    renderBackupsBrowserList(jobId, data);
+  } catch (err) {
+    const listEl = document.getElementById('backups-browser-list');
+    if (listEl) {
+      listEl.innerHTML = `
+        <p style="color: var(--error); font-size: 0.875rem; padding: 20px;">Failed to load backups: ${escapeHtml(err.message)}</p>
+        <button class="btn btn-sm js-open-backups" data-job-id="${jobId}">Retry</button>
+      `;
+    }
+  }
+}
+
+function closeBackupsBrowser() {
+  document.getElementById('backups-modal').classList.add('hidden');
+  backupsBrowserJobId = null;
+  backupsSearchTerm = '';
+  // leave currentBackupsData as-is (cheap)
+}
+
+function refreshBackupsBrowser() {
+  if (!backupsBrowserJobId) return;
+  const listEl = document.getElementById('backups-browser-list');
+  if (listEl) listEl.innerHTML = '<div class="loading">Refreshing...</div>';
+  backupsSearchTerm = '';
+  const searchEl = document.getElementById('backups-browser-search');
+  if (searchEl) searchEl.value = '';
+
+  api(`/jobs/${backupsBrowserJobId}/backups`)
+    .then(data => {
+      currentBackupsData = { psql: data.psql || [], minio: data.minio || [] };
+      renderBackupsBrowserList(backupsBrowserJobId, data);
+    })
+    .catch(err => {
+      if (listEl) {
+        listEl.innerHTML = `
+          <p style="color: var(--error); padding: 20px;">Refresh failed: ${escapeHtml(err.message)}</p>
+          <button class="btn btn-sm js-open-backups" data-job-id="${backupsBrowserJobId}">Retry</button>
+        `;
+      }
+    });
+}
+
+function onBackupsBrowserSearch(value) {
+  backupsSearchTerm = value || '';
+  if (backupsBrowserJobId) {
+    renderBackupsBrowserList(backupsBrowserJobId, currentBackupsData);
+  }
+}
+
+function renderBackupsBrowserList(jobId, data) {
+  const listContainer = document.getElementById('backups-browser-list');
+  const countEl = document.getElementById('backups-browser-count');
+  if (!listContainer) return;
+
+  const term = (backupsSearchTerm || '').toLowerCase().trim();
+  let psql = (data && data.psql) || [];
+  let minio = (data && data.minio) || [];
+
+  if (term) {
+    psql = psql.filter(b => b.name.toLowerCase().includes(term));
+    minio = minio.filter(b => b.name.toLowerCase().includes(term));
+  }
+
+  const total = psql.length + minio.length;
+  if (countEl) {
+    countEl.textContent = `${total} backup${total === 1 ? '' : 's'}`;
+  }
+
+  if (total === 0) {
+    const scope = data && data.psql_prefix ? ` for ${escapeHtml(data.psql_prefix)}` : '';
+    const msg = term
+      ? 'No matching backups.'
+      : `No backups found${scope} on RAID for this job.<br>Run the job with the "persist" step.`;
+    listContainer.innerHTML = `<div class="backups-empty" style="padding:24px;">${msg}</div>`;
+    return;
+  }
+
+  let html = '<div class="backups-list">';
+
+  const scopeLabel = data && data.psql_prefix ? ` · ${escapeHtml(data.psql_prefix)}` : '';
+
+  if (psql.length > 0) {
+    html += `<div class="backups-group-label">PostgreSQL${scopeLabel}</div>`;
+    const groups = groupBackups(psql);
+    for (const g of groups) {
+      html += `<div class="backup-group"><div class="backup-group-head">${g.label}</div>`;
+      html += g.items.map(b => renderBackupRow(jobId, b)).join('');
+      html += `</div>`;
+    }
+  }
+
+  if (minio.length > 0) {
+    html += `<div class="backups-group-label" style="margin-top:10px;">MinIO</div>`;
+    const groups = groupBackups(minio);
+    for (const g of groups) {
+      html += `<div class="backup-group"><div class="backup-group-head">${g.label}</div>`;
+      html += g.items.map(b => renderBackupRow(jobId, b)).join('');
+      html += `</div>`;
+    }
+  }
+
+  html += '</div>';
+
+  listContainer.innerHTML = html;
+  // Note: actual click handling is done via event delegation on #backups-browser-list (set up in DOMContentLoaded)
 }
 
 // Job CRUD
@@ -706,21 +1125,25 @@ let logRefreshInterval = null;
 let rawLogOutput = '';
 
 function showRunOutput(runId) {
-  currentRunId = runId;
-
-  // Close any open modals
+  // Close any open modals first (don't disturb the main nav)
   document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
 
-  // Find run info for breadcrumb
+  // Push a proper history entry so browser back/forward works
+  const url = new URL(window.location);
+  url.searchParams.set('tab', activeTab);
+  url.searchParams.set('run', runId);
+  history.pushState(null, '', url);
+
+  // Find nice labels for the breadcrumb (best effort; sync will also load the run)
   const run = allRuns.find(r => r.id === runId);
   const parentLabel = activeTab === 'jobs' ? 'Jobs' : 'Activity';
   const currentLabel = run ? `Run #${run.id} - ${run.job_name}` : `Run #${runId}`;
 
-  // Show breadcrumb, hide tab content, show log viewer
+  // Immediately show the chrome + labels (syncRoute would also do this after popstate)
   showBreadcrumb(parentLabel, currentLabel);
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.getElementById('log-viewer').classList.remove('hidden');
+  showLogViewerChrome();
 
+  currentRunId = runId;
   loadInlineLogs();
 }
 
@@ -733,10 +1156,13 @@ function closeLogViewer() {
   currentRunId = null;
   rawLogOutput = '';
 
-  // Hide log viewer, restore breadcrumb to tabs, restore active tab
-  document.getElementById('log-viewer').classList.add('hidden');
-  hideBreadcrumb();
-  switchToTab(activeTab);
+  // Remove the run from URL and push so history is correct
+  const url = new URL(window.location);
+  url.searchParams.delete('run');
+  history.pushState(null, '', url);
+
+  // Let the route sync handle hiding the viewer and restoring the tab content
+  syncRouteFromURL();
 }
 
 async function loadInlineLogs() {
@@ -751,6 +1177,10 @@ async function loadInlineLogs() {
 
     // Update header
     document.getElementById('log-viewer-title').textContent = `Run #${run.id} - ${run.job_name}`;
+
+    // Keep the breadcrumb in sync too (useful for deep links / history restore)
+    const parentLabel = activeTab === 'jobs' ? 'Jobs' : 'Activity';
+    showBreadcrumb(parentLabel, `Run #${run.id} - ${run.job_name}`);
 
     const badge = document.getElementById('log-viewer-badge');
     badge.textContent = run.status;
@@ -1322,6 +1752,33 @@ function formatDuration(start, end) {
     return `${minutes}m ${seconds % 60}s`;
   }
   return `${seconds}s`;
+}
+
+function formatBytes(bytes) {
+  if (bytes == null || bytes === 0) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  let val = bytes;
+  while (val >= 1024 && i < units.length - 1) {
+    val /= 1024;
+    i++;
+  }
+  return val.toFixed(val < 10 && i > 0 ? 1 : 0) + ' ' + units[i];
+}
+
+function parseBackupTime(name) {
+  if (!name) return '';
+  // PSQL: dbname_20260110_151532
+  let m = name.match(/_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/);
+  if (m) {
+    return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}`;
+  }
+  // MinIO: bucket_2026_0110_151530.tar.gz
+  m = name.match(/_(\d{4})_(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.tar\.gz$/);
+  if (m) {
+    return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}`;
+  }
+  return '';
 }
 
 function getStatusIcon(status) {

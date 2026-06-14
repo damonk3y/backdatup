@@ -1,5 +1,13 @@
 #!/bin/bash
-
+#
+# MinIO Restore Script
+#
+# Usage:
+#   make restore-minio
+#
+# For a specific .tar.gz you downloaded from the Web UI, see RESTORE.md.
+# You can also use mc directly after extracting the archive.
+#
 set -e
 
 RED='\033[0;31m'

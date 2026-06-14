@@ -8,6 +8,7 @@ A PostgreSQL backup automation tool that creates parallel database dumps, persis
 - **RAID Persistence** - Copies backups to RAID storage with file-level deduplication
 - **Error-Tolerant Restore** - Handles PostgreSQL version compatibility warnings gracefully
 - **Smart Cleanup** - Retention-based deletion that always keeps the 3 most recent backups
+- **Web UI downloads** - Browse and stream-download persisted backups (PostgreSQL directories streamed as `.tar.gz`, MinIO archives as-is) directly from each job's detail view. Files are served from the job's configured `RAID_PATH`.
 
 ## Requirements
 
@@ -49,7 +50,7 @@ make backup
 # Copy backups to RAID storage
 make persist
 
-# Restore from the latest RAID backup
+# Restore from the latest RAID backup (see RESTORE.md for full details)
 make restore
 
 # Clean up old backups (keeps 3 most recent, deletes >2 days old)
@@ -65,6 +66,20 @@ make e2e-run
 ```
 
 This executes: backup → persist → restore → cleanup
+
+**Note**: The `e2e-run` target is mostly useful for testing the full pipeline. In production you will rarely want an automated job that immediately restores over your database.
+
+### Restoring Databases
+
+See the dedicated guide:
+
+- **[RESTORE.md](./RESTORE.md)** — step-by-step instructions for:
+  - Restoring the latest backup
+  - Restoring a **specific backup you downloaded from the Web UI**
+  - Restoring to a different database name (safely)
+  - Manual `pg_restore` usage
+  - MinIO bucket restores
+  - Common troubleshooting (version compatibility warnings, etc.)
 
 ## How It Works
 
@@ -84,13 +99,15 @@ Copies local dumps to RAID storage:
 - Reports progress every 10 files
 - Tracks copied/skipped/failed statistics
 
-### Restoration (`recovery/restore-psql.sh`)
+### Restoration
 
-Restores the database from the latest RAID backup:
-- Automatically finds the most recent backup
-- Uses parallel restore with up to 4 jobs
-- Tolerates version compatibility warnings
-- Uses `--clean --if-exists` for safe restoration
+See **[RESTORE.md](./RESTORE.md)** for the complete restore guide (including how to use backups downloaded via the Web UI, restoring to alternate database names, and manual `pg_restore` commands).
+
+The scripts (`recovery/restore-psql.sh` and `restore-minio.sh`) handle:
+- Finding the latest backup on RAID
+- Parallel restore (`-j`)
+- Graceful handling of PostgreSQL version-compatibility warnings from `pg_restore`
+- `--clean --if-exists` safety flags
 
 ### Cleanup (`storage/cleanup.sh`)
 
@@ -107,10 +124,11 @@ backdatup/
 ├── prevention/
 │   └── psql-backup.sh      # Backup creation
 ├── recovery/
-│   └── restore-psql.sh     # Database restoration
+│   └── restore-*.sh        # Database / MinIO restoration (see RESTORE.md)
 ├── storage/
 │   ├── persist-dumps.sh    # RAID persistence
 │   └── cleanup.sh          # Backup lifecycle management
+├── RESTORE.md              # Detailed restore guide (including downloaded backups)
 ├── Makefile                # Command orchestration
 ├── .env.example            # Configuration template
 └── dumps/                  # Local backup staging (gitignored)

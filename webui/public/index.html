@@ -344,6 +344,39 @@
         </div>
       </div>
     </div>
+
+    <!-- Dedicated Backups Browser Modal (larger, separate from job config detail) -->
+    <div id="backups-modal" class="modal hidden backups-modal">
+      <div class="modal-backdrop" onclick="closeBackupsBrowser()"></div>
+      <div class="modal-panel">
+        <div class="modal-header">
+          <div>
+            <h3 id="backups-modal-title">Backups on RAID</h3>
+            <div id="backups-modal-subtitle" class="backups-modal-subtitle"></div>
+          </div>
+          <button class="btn-close" onclick="closeBackupsBrowser()">&times;</button>
+        </div>
+        <div class="modal-body backups-modal-body">
+          <div class="backups-browser-toolbar">
+            <div class="backups-browser-meta">
+              <span id="backups-browser-count" class="backups-count"></span>
+            </div>
+            <div class="backups-browser-actions">
+              <input type="search" id="backups-browser-search" class="backups-search" placeholder="Filter backups by name…">
+              <button class="btn btn-sm" onclick="refreshBackupsBrowser()">Refresh</button>
+            </div>
+          </div>
+
+          <div id="backups-browser-list" class="backups-browser-list">
+            <div class="loading">Loading backups...</div>
+          </div>
+
+          <div class="backups-footnote">
+            Downloads are streamed directly from the job’s configured RAID_PATH. PostgreSQL directory backups are archived as .tar.gz on the fly.
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>

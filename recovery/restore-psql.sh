@@ -1,5 +1,19 @@
 #!/bin/bash
-
+#
+# PostgreSQL Restore Script
+#
+# Usage (latest backup from RAID):
+#   make restore-psql
+#
+# Usage (specific/downloaded backup):
+#   See RESTORE.md for full instructions.
+#   Typical flow after downloading from the Web UI:
+#     tar -xzf mydb_20260614_....tar.gz
+#     pg_restore -h ... -d targetdb --clean --if-exists -j 4 ./mydb_20260614_.../
+#
+# You can also override variables:
+#   POSTGRES_DB=otherdb BACKDATUP_ENV_FILE=.env.test make restore-psql
+#
 set -e
 
 RED='\033[0;31m'
